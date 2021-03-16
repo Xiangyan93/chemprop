@@ -81,6 +81,8 @@ class MoleculeDatapoint:
         self.atom_descriptors = atom_descriptors
         self.atom_features = atom_features
         self.bond_features = bond_features
+        self.gp_predict = None
+        self.gp_uncertainty = None
         self.overwrite_default_atom_features = overwrite_default_atom_features
         self.overwrite_default_bond_features = overwrite_default_bond_features
 
@@ -216,6 +218,7 @@ class MoleculeDataset(Dataset):
         self._scaler = None
         self._batch_graph = None
         self._random = Random()
+        self.kernel = None
 
     def smiles(self, flatten: bool = False) -> Union[List[str], List[List[str]]]:
         """
@@ -289,7 +292,7 @@ class MoleculeDataset(Dataset):
 
         return self._batch_graph
 
-    def features(self) -> List[np.ndarray]:
+    def features(self) -> Optional[List[np.ndarray]]:
         """
         Returns the features associated with each molecule (if they exist).
 
@@ -299,6 +302,23 @@ class MoleculeDataset(Dataset):
             return None
 
         return [d.features for d in self._data]
+
+    def gp_predict(self) -> Optional[List[np.ndarray]]:
+        """
+        Returns the GP prediction with each molecule (if they exist).
+
+        :return: A list of 1D numpy arrays containing the GP prediction for each molecule or None if GP is not used.
+        """
+        if len(self._data) == 0 or self._data[0].gp_predict is None:
+            return None
+        # return [d.gp_predict for d in self._data]
+        return [np.r_[d.gp_predict, d.gp_uncertainty] for d in self._data]
+
+    def gp_uncertainty(self) -> Optional[List[np.ndarray]]:
+        if len(self._data) == 0 or self._data[0].gp_uncertainty is None:
+            return None
+
+        return [d.gp_uncertainty for d in self._data]
 
     def atom_features(self) -> List[np.ndarray]:
         """
@@ -471,6 +491,18 @@ class MoleculeDataset(Dataset):
         assert len(self._data) == len(targets)
         for i in range(len(self._data)):
             self._data[i].set_targets(targets[i])
+
+    def set_gp_predict(self, gp_predict) -> None:
+        if gp_predict.ndim == 1:
+            gp_predict = gp_predict.reshape(len(gp_predict), 1)
+        for i, d in enumerate(self._data):
+            d.gp_predict = gp_predict[i]
+
+    def set_gp_uncertainty(self, gp_uncertainty) -> None:
+        if gp_uncertainty.ndim == 1:
+            gp_uncertainty = gp_uncertainty.reshape(len(gp_uncertainty), 1)
+        for i, d in enumerate(self._data):
+            d.gp_uncertainty = gp_uncertainty[i]
 
     def reset_features_and_targets(self) -> None:
         """Resets the features (atom, bond, and molecule) and targets to their raw values."""

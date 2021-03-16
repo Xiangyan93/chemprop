@@ -217,7 +217,6 @@ def get_data(path: str,
     # Load data
     with open(path) as f:
         reader = csv.DictReader(f)
-
         # By default, the targets columns are all the columns except the SMILES column
         if target_columns is None:
             target_columns = get_task_names(

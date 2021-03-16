@@ -352,6 +352,8 @@ class TrainArgs(CommonArgs):
     """Overwrites the default atom descriptors with the new ones instead of concatenating them"""
     no_bond_features_scaling: bool = False
     """Turn off atom feature scaling."""
+    gp : bool = False
+    """Use GP graph kernel as NN features."""
 
     def __init__(self, *args, **kwargs) -> None:
         super(TrainArgs, self).__init__(*args, **kwargs)

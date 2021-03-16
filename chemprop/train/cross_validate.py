@@ -14,6 +14,8 @@ from chemprop.constants import TEST_SCORES_FILE_NAME, TRAIN_LOGGER_NAME
 from chemprop.data import get_data, get_task_names, MoleculeDataset, validate_dataset_type
 from chemprop.utils import create_logger, makedirs, timeit
 from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
+from chemprop.graphdot.kernel import get_preCakc_kernel
+from chemprop.graphdot.graph.hashgraph import Graph
 
 
 @timeit(logger_name=TRAIN_LOGGER_NAME)
@@ -64,6 +66,7 @@ def cross_validate(args: TrainArgs,
         logger=logger,
         skip_none_targets=True
     )
+    debug('Loading data end')
     validate_dataset_type(data, dataset_type=args.dataset_type)
     args.features_size = data.features_size()
 
@@ -76,6 +79,11 @@ def cross_validate(args: TrainArgs,
     if args.bond_features_path is not None:
         args.bond_features_size = data.bond_features_size()
         set_extra_bond_fdim(args.bond_features_size)
+
+    if args.gp:
+        graphs = list(map(Graph.from_rdkit, data.mols(flatten=True)))
+        Graph.unify_datatype(graphs, inplace=True)
+        data.kernel = get_preCakc_kernel(graphs, data.smiles(flatten=True))
 
     debug(f'Number of tasks = {args.num_tasks}')
 

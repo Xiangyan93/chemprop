@@ -1,6 +1,6 @@
 from logging import Logger
 import os
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 import numpy as np
 import pandas as pd
@@ -87,6 +87,20 @@ def run_training(args: TrainArgs,
                                                      num_folds=args.num_folds,
                                                      args=args,
                                                      logger=logger)
+
+    if args.gp:
+        from chemprop.graphdot.gp import add_gp_results
+        add_gp_results(train_data, val_data, test_data, args.dataset_type,
+                       data.kernel)
+        for d in data._data:
+            # if d.features is None:
+            d.features = d.gp_predict#np.r_[d.gp_predict, d.gp_uncertainty]
+            d.raw_features = d.gp_predict#np.r_[d.gp_predict, d.gp_uncertainty]
+            #else:
+            #    d.features = np.r_[d.features, d.gp_predict, d.gp_uncertainty]
+            #    d.raw_features = np.r_[d.features, d.gp_predict, d.gp_uncertainty]
+                # 1. Get graphs, precalc kernels
+        # 2. Train multiple GP on the training set,
 
     if args.dataset_type == 'classification':
         class_sizes = get_class_sizes(data)
@@ -267,7 +281,7 @@ def run_training(args: TrainArgs,
         # Evaluate on test set using model with best validation score
         info(f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
         model = load_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), device=args.device, logger=logger)
-
+        print(list(model.named_parameters())[-2:])
         test_preds = predict(
             model=model,
             data_loader=test_data_loader,

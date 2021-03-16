@@ -226,7 +226,6 @@ class MPN(nn.Module):
 
         if self.use_input_features:
             features_batch = torch.from_numpy(np.stack(features_batch)).float().to(self.device)
-
             if self.features_only:
                 return features_batch
 

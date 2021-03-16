@@ -39,8 +39,41 @@ class MoleculeModel(nn.Module):
 
         self.create_encoder(args)
         self.create_ffn(args)
-
+        self.gp = args.gp
+        """
+        if self.gp:
+            self.device = args.device
+            if args.dataset_type == 'classification':
+                pass
+            else:
+                assert (self.output_size == 1)
+                dropout = nn.Dropout(args.dropout)
+                activation = get_activation_function(args.activation)
+                self.ffn_1 = nn.Sequential(
+                    activation,
+                    dropout,
+                    nn.Linear(args.ffn_hidden_size, 1),
+                )
+                self.ffn_2 = nn.Sequential(
+                    nn.Linear(1 + self.output_size, self.output_size, bias=True),
+                )
+        """
+        #if self.gp:
+        #    list(self.named_parameters())[-1][1] += torch.tensor(np.r_[np.zeros(1), np.ones(1)], requires_grad=True)
         initialize_weights(self)
+        """
+        if self.gp:
+            import collections
+            para_dict = collections.OrderedDict()
+            for i, param in enumerate(self.named_parameters()):
+                if i != len(list(self.named_parameters())) - 1:
+                    para_dict[param[0]] = param[1]
+                else:
+                    # W = param[1] + torch.tensor(np.r_[np.zeros(1), np.ones(1)], requires_grad=True)
+                    W = param[1] + torch.tensor(np.ones(2) * 0.5, requires_grad=True)
+                    para_dict[param[0]] = W
+            self.load_state_dict(para_dict)
+        """
 
     def create_encoder(self, args: TrainArgs) -> None:
         """
@@ -139,7 +172,8 @@ class MoleculeModel(nn.Module):
                 features_batch: List[np.ndarray] = None,
                 atom_descriptors_batch: List[np.ndarray] = None,
                 atom_features_batch: List[np.ndarray] = None,
-                bond_features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
+                bond_features_batch: List[np.ndarray] = None,
+                gp_output_batch: List[np.ndarray] = None) -> torch.FloatTensor:
         """
         Runs the :class:`MoleculeModel` on input.
 
@@ -155,7 +189,17 @@ class MoleculeModel(nn.Module):
         if self.featurizer:
             return self.featurize(batch, features_batch, atom_descriptors_batch,
                                   atom_features_batch, bond_features_batch)
-
+        """
+        if False:
+            output = self.ffn_1(self.featurize(batch, features_batch, atom_descriptors_batch,
+                                    atom_features_batch, bond_features_batch))
+            #output = self.featurize(batch, features_batch, atom_descriptors_batch,
+            #                        atom_features_batch, bond_features_batch)
+            gp_output_batch = torch.from_numpy(np.stack(gp_output_batch)).float().to(self.device)
+            output = torch.cat([output, gp_output_batch], dim=1)
+            output = self.ffn_2(output)
+        else:
+        """
         output = self.ffn(self.encoder(batch, features_batch, atom_descriptors_batch,
                                        atom_features_batch, bond_features_batch))
 

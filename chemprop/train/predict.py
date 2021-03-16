@@ -29,11 +29,12 @@ def predict(model: MoleculeModel,
         batch: MoleculeDataset
         mol_batch, features_batch, atom_descriptors_batch, atom_features_batch, bond_features_batch = \
             batch.batch_graph(), batch.features(), batch.atom_descriptors(), batch.atom_features(), batch.bond_features()
+        gp_predict_batch = batch.gp_predict()
 
         # Make predictions
         with torch.no_grad():
             batch_preds = model(mol_batch, features_batch, atom_descriptors_batch,
-                                atom_features_batch, bond_features_batch)
+                                atom_features_batch, bond_features_batch, gp_predict_batch)
 
         batch_preds = batch_preds.data.cpu().numpy()
 
