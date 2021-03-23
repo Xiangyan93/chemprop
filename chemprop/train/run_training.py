@@ -14,11 +14,14 @@ from .predict import predict
 from .train import train
 from chemprop.args import TrainArgs
 from chemprop.constants import MODEL_FILE_NAME
-from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
+from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, \
+    MoleculeDataset, set_cache_graph, split_data
 from chemprop.models import MoleculeModel
 from chemprop.nn_utils import param_count
-from chemprop.utils import build_optimizer, build_lr_scheduler, get_loss_func, load_checkpoint, makedirs, \
+from chemprop.utils import build_optimizer, build_lr_scheduler, get_loss_func, \
+    load_checkpoint, makedirs, \
     save_checkpoint, save_smiles_splits
+from chemprop.graphdot.gp import add_gp_results
 
 
 def run_training(args: TrainArgs,
@@ -58,7 +61,7 @@ def run_training(args: TrainArgs,
                             features_path=args.separate_val_features_path,
                             atom_descriptors_path=args.separate_val_atom_descriptors_path,
                             bond_features_path=args.separate_val_bond_features_path,
-                            smiles_columns = args.smiles_columns,
+                            smiles_columns=args.smiles_columns,
                             logger=logger)
 
     if args.separate_val_path and args.separate_test_path:
@@ -88,19 +91,12 @@ def run_training(args: TrainArgs,
                                                      args=args,
                                                      logger=logger)
 
-    if args.gp:
-        from chemprop.graphdot.gp import add_gp_results
+    if args.gp or (args.gp_as_feature is not None or args.gp_as_output is not None):
+        gp_type = [args.gp_as_feature, args.gp_as_output]
+        if args.gp:
+            gp_type.append('predict')
         add_gp_results(train_data, val_data, test_data, args.dataset_type,
-                       data.kernel)
-        for d in data._data:
-            # if d.features is None:
-            d.features = d.gp_predict#np.r_[d.gp_predict, d.gp_uncertainty]
-            d.raw_features = d.gp_predict#np.r_[d.gp_predict, d.gp_uncertainty]
-            #else:
-            #    d.features = np.r_[d.features, d.gp_predict, d.gp_uncertainty]
-            #    d.raw_features = np.r_[d.features, d.gp_predict, d.gp_uncertainty]
-                # 1. Get graphs, precalc kernels
-        # 2. Train multiple GP on the training set,
+                       data.kernel, gp_type)
 
     if args.dataset_type == 'classification':
         class_sizes = get_class_sizes(data)
@@ -129,16 +125,22 @@ def run_training(args: TrainArgs,
         features_scaler = None
 
     if args.atom_descriptor_scaling and args.atom_descriptors is not None:
-        atom_descriptor_scaler = train_data.normalize_features(replace_nan_token=0, scale_atom_descriptors=True)
-        val_data.normalize_features(atom_descriptor_scaler, scale_atom_descriptors=True)
-        test_data.normalize_features(atom_descriptor_scaler, scale_atom_descriptors=True)
+        atom_descriptor_scaler = train_data.normalize_features(
+            replace_nan_token=0, scale_atom_descriptors=True)
+        val_data.normalize_features(atom_descriptor_scaler,
+                                    scale_atom_descriptors=True)
+        test_data.normalize_features(atom_descriptor_scaler,
+                                     scale_atom_descriptors=True)
     else:
         atom_descriptor_scaler = None
 
     if args.bond_feature_scaling and args.bond_features_size > 0:
-        bond_feature_scaler = train_data.normalize_features(replace_nan_token=0, scale_bond_features=True)
-        val_data.normalize_features(bond_feature_scaler, scale_bond_features=True)
-        test_data.normalize_features(bond_feature_scaler, scale_bond_features=True)
+        bond_feature_scaler = train_data.normalize_features(replace_nan_token=0,
+                                                            scale_bond_features=True)
+        val_data.normalize_features(bond_feature_scaler,
+                                    scale_bond_features=True)
+        test_data.normalize_features(bond_feature_scaler,
+                                     scale_bond_features=True)
     else:
         bond_feature_scaler = None
 
@@ -160,7 +162,8 @@ def run_training(args: TrainArgs,
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     if args.dataset_type == 'multiclass':
-        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks, args.multiclass_num_classes))
+        sum_test_preds = np.zeros(
+            (len(test_smiles), args.num_tasks, args.multiclass_num_classes))
     else:
         sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
@@ -193,7 +196,8 @@ def run_training(args: TrainArgs,
     )
 
     if args.class_balance:
-        debug(f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
+        debug(
+            f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -207,8 +211,10 @@ def run_training(args: TrainArgs,
 
         # Load/build model
         if args.checkpoint_paths is not None:
-            debug(f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
-            model = load_checkpoint(args.checkpoint_paths[model_idx], logger=logger)
+            debug(
+                f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
+            model = load_checkpoint(args.checkpoint_paths[model_idx],
+                                    logger=logger)
         else:
             debug(f'Building model {model_idx}')
             model = MoleculeModel(args)
@@ -221,7 +227,8 @@ def run_training(args: TrainArgs,
 
         # Ensure that model is saved in correct location for evaluation if 0 epochs
         save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model, scaler,
-                        features_scaler, atom_descriptor_scaler, bond_feature_scaler, args)
+                        features_scaler, atom_descriptor_scaler,
+                        bond_feature_scaler, args)
 
         # Optimizers
         optimizer = build_optimizer(model, args)
@@ -254,8 +261,9 @@ def run_training(args: TrainArgs,
                 num_tasks=args.num_tasks,
                 metrics=args.metrics,
                 dataset_type=args.dataset_type,
+                args=args,
                 scaler=scaler,
-                logger=logger
+                logger=logger,
             )
 
             for metric, scores in val_scores.items():
@@ -267,23 +275,30 @@ def run_training(args: TrainArgs,
                 if args.show_individual_scores:
                     # Individual validation scores
                     for task_name, val_score in zip(args.task_names, scores):
-                        debug(f'Validation {task_name} {metric} = {val_score:.6f}')
-                        writer.add_scalar(f'validation_{task_name}_{metric}', val_score, n_iter)
+                        debug(
+                            f'Validation {task_name} {metric} = {val_score:.6f}')
+                        writer.add_scalar(f'validation_{task_name}_{metric}',
+                                          val_score, n_iter)
 
             # Save model checkpoint if improved validation score
             avg_val_score = np.nanmean(val_scores[args.metric])
             if args.minimize_score and avg_val_score < best_score or \
                     not args.minimize_score and avg_val_score > best_score:
                 best_score, best_epoch = avg_val_score, epoch
-                save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model, scaler, features_scaler,
-                                atom_descriptor_scaler, bond_feature_scaler, args)
+                save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model,
+                                scaler, features_scaler,
+                                atom_descriptor_scaler, bond_feature_scaler,
+                                args)
 
         # Evaluate on test set using model with best validation score
-        info(f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
-        model = load_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), device=args.device, logger=logger)
-        print(list(model.named_parameters())[-2:])
+        info(
+            f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
+        model = load_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME),
+                                device=args.device, logger=logger)
+        # print(dict(model.named_parameters())['ffn_2.0.weight'])
         test_preds = predict(
             model=model,
+            args=args,
             data_loader=test_data_loader,
             scaler=scaler
         )
@@ -308,8 +323,10 @@ def run_training(args: TrainArgs,
             if args.show_individual_scores:
                 # Individual test scores
                 for task_name, test_score in zip(args.task_names, scores):
-                    info(f'Model {model_idx} test {task_name} {metric} = {test_score:.6f}')
-                    writer.add_scalar(f'test_{task_name}_{metric}', test_score, n_iter)
+                    info(
+                        f'Model {model_idx} test {task_name} {metric} = {test_score:.6f}')
+                    writer.add_scalar(f'test_{task_name}_{metric}', test_score,
+                                      n_iter)
         writer.close()
 
     # Evaluate ensemble on test set
@@ -332,15 +349,21 @@ def run_training(args: TrainArgs,
         # Individual ensemble scores
         if args.show_individual_scores:
             for task_name, ensemble_score in zip(args.task_names, scores):
-                info(f'Ensemble test {task_name} {metric} = {ensemble_score:.6f}')
+                info(
+                    f'Ensemble test {task_name} {metric} = {ensemble_score:.6f}')
 
     # Optionally save test preds
     if args.save_preds:
-        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles()})
-
+        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles(),
+                                                  'targets': test_data.targets()})
+        if args.gp:
+            test_preds_dataframe['gp_predict'] = test_data.gp_predict()
+            test_preds_dataframe['gp_uncertainty'] = test_data.gp_uncertainty()
         for i, task_name in enumerate(args.task_names):
-            test_preds_dataframe[task_name] = [pred[i] for pred in avg_test_preds]
+            test_preds_dataframe[task_name] = [pred[i] for pred in
+                                               avg_test_preds]
 
-        test_preds_dataframe.to_csv(os.path.join(args.save_dir, 'test_preds.csv'), index=False)
+        test_preds_dataframe.to_csv(
+            os.path.join(args.save_dir, 'test_preds.csv'), index=False)
 
     return ensemble_scores

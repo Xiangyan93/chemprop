@@ -47,16 +47,18 @@ def train(model: MoleculeModel,
         # Prepare batch
         batch: MoleculeDataset
         mol_batch, features_batch, target_batch, atom_descriptors_batch, atom_features_batch, bond_features_batch = \
-            batch.batch_graph(), batch.features(), batch.targets(), batch.atom_descriptors(), \
+            batch.batch_graph(), batch.features(args.gp_as_feature), batch.targets(), batch.atom_descriptors(), \
             batch.atom_features(), batch.bond_features()
-        gp_predict_batch = batch.gp_predict()
+
+        gp_predict_batch = batch.gp_predict(args.gp_as_output)
+        gp_uncertainty_batch = batch.gp_uncertainty()
 
         mask = torch.Tensor([[x is not None for x in tb] for tb in target_batch])
         targets = torch.Tensor([[0 if x is None else x for x in tb] for tb in target_batch])
 
         # Run model
         model.zero_grad()
-        preds = model(mol_batch, features_batch, atom_descriptors_batch, atom_features_batch, bond_features_batch, gp_predict_batch)
+        preds = model(mol_batch, features_batch, atom_descriptors_batch, atom_features_batch, bond_features_batch, gp_predict_batch, gp_uncertainty_batch)
 
         # Move tensors to correct device
         mask = mask.to(preds.device)

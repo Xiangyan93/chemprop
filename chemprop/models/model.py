@@ -31,17 +31,16 @@ class MoleculeModel(nn.Module):
         if self.multiclass:
             self.output_size *= args.multiclass_num_classes
 
-        if self.classification:
-            self.sigmoid = nn.Sigmoid()
+        self.sigmoid = nn.Sigmoid()
 
         if self.multiclass:
             self.multiclass_softmax = nn.Softmax(dim=2)
 
         self.create_encoder(args)
         self.create_ffn(args)
-        self.gp = args.gp
-        """
-        if self.gp:
+        self.gp_as_feature = args.gp_as_feature
+        self.gp_as_output = args.gp_as_output
+        if self.gp_as_output is not None:
             self.device = args.device
             if args.dataset_type == 'classification':
                 pass
@@ -55,25 +54,27 @@ class MoleculeModel(nn.Module):
                     nn.Linear(args.ffn_hidden_size, 1),
                 )
                 self.ffn_2 = nn.Sequential(
-                    nn.Linear(1 + self.output_size, self.output_size, bias=True),
+                    nn.Linear(1 + self.output_size, self.output_size, bias=False),
                 )
-        """
-        #if self.gp:
-        #    list(self.named_parameters())[-1][1] += torch.tensor(np.r_[np.zeros(1), np.ones(1)], requires_grad=True)
+                self.ffn_u = nn.Sequential(
+                    nn.Linear(1, 100, bias=True),
+                    activation,
+                    dropout,
+                    nn.Linear(100, self.output_size, bias=True),
+                )
         initialize_weights(self)
-        """
-        if self.gp:
+
+        if self.gp_as_output is not None:
             import collections
             para_dict = collections.OrderedDict()
             for i, param in enumerate(self.named_parameters()):
-                if i != len(list(self.named_parameters())) - 1:
+                if param[0] != 'ffn_2.0.weight':
                     para_dict[param[0]] = param[1]
                 else:
                     # W = param[1] + torch.tensor(np.r_[np.zeros(1), np.ones(1)], requires_grad=True)
                     W = param[1] + torch.tensor(np.ones(2) * 0.5, requires_grad=True)
                     para_dict[param[0]] = W
             self.load_state_dict(para_dict)
-        """
 
     def create_encoder(self, args: TrainArgs) -> None:
         """
@@ -173,7 +174,8 @@ class MoleculeModel(nn.Module):
                 atom_descriptors_batch: List[np.ndarray] = None,
                 atom_features_batch: List[np.ndarray] = None,
                 bond_features_batch: List[np.ndarray] = None,
-                gp_output_batch: List[np.ndarray] = None) -> torch.FloatTensor:
+                gp_predict_batch: List[np.ndarray] = None,
+                gp_uncertainty_batch: List[np.ndarray] = None) -> torch.FloatTensor:
         """
         Runs the :class:`MoleculeModel` on input.
 
@@ -186,22 +188,28 @@ class MoleculeModel(nn.Module):
         :return: The output of the :class:`MoleculeModel`, which is either property predictions
                  or molecule features if :code:`self.featurizer=True`.
         """
+        # print(features_batch[0].shape)
         if self.featurizer:
             return self.featurize(batch, features_batch, atom_descriptors_batch,
                                   atom_features_batch, bond_features_batch)
-        """
-        if False:
-            output = self.ffn_1(self.featurize(batch, features_batch, atom_descriptors_batch,
+        if self.gp_as_output in ['truth', 'predict']:
+            output_mpnn = self.ffn_1(self.featurize(batch, features_batch, atom_descriptors_batch,
                                     atom_features_batch, bond_features_batch))
             #output = self.featurize(batch, features_batch, atom_descriptors_batch,
             #                        atom_features_batch, bond_features_batch)
-            gp_output_batch = torch.from_numpy(np.stack(gp_output_batch)).float().to(self.device)
-            output = torch.cat([output, gp_output_batch], dim=1)
+            # print(gp_predict_batch)
+            gp_predict_batch = torch.from_numpy(np.stack(gp_predict_batch)).float().to(self.device)
+            # print(gp_predict_batch)
+            if self.gp_as_output == 'predict_u':
+                output_u = self.ffn_u(gp_uncertainty_batch)
+                gp_predict = gp_predict_batch * self.sigmoid(output_u)
+                output = torch.cat([output_mpnn, gp_predict], dim=1)
+            else:
+                output = torch.cat([output_mpnn, gp_predict_batch], dim=1)
             output = self.ffn_2(output)
         else:
-        """
-        output = self.ffn(self.encoder(batch, features_batch, atom_descriptors_batch,
-                                       atom_features_batch, bond_features_batch))
+            output = self.ffn(self.encoder(batch, features_batch, atom_descriptors_batch,
+                                           atom_features_batch, bond_features_batch))
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
         if self.classification and not self.training:

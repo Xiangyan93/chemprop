@@ -5,10 +5,12 @@ from tqdm import tqdm
 
 from chemprop.data import MoleculeDataLoader, MoleculeDataset, StandardScaler
 from chemprop.models import MoleculeModel
+from chemprop.args import TrainArgs
 
 
 def predict(model: MoleculeModel,
             data_loader: MoleculeDataLoader,
+            args: TrainArgs,
             disable_progress_bar: bool = False,
             scaler: StandardScaler = None) -> List[List[float]]:
     """
@@ -29,12 +31,13 @@ def predict(model: MoleculeModel,
         batch: MoleculeDataset
         mol_batch, features_batch, atom_descriptors_batch, atom_features_batch, bond_features_batch = \
             batch.batch_graph(), batch.features(), batch.atom_descriptors(), batch.atom_features(), batch.bond_features()
-        gp_predict_batch = batch.gp_predict()
-
+        gp_predict_batch = batch.gp_predict(args.gp_as_output)
+        gp_uncertainty_batch = batch.gp_uncertainty()
         # Make predictions
         with torch.no_grad():
             batch_preds = model(mol_batch, features_batch, atom_descriptors_batch,
-                                atom_features_batch, bond_features_batch, gp_predict_batch)
+                                atom_features_batch, bond_features_batch,
+                                gp_predict_batch, gp_uncertainty_batch)
 
         batch_preds = batch_preds.data.cpu().numpy()
 

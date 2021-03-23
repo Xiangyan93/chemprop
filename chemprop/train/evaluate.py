@@ -6,6 +6,7 @@ from .predict import predict
 from chemprop.data import MoleculeDataLoader, StandardScaler
 from chemprop.models import MoleculeModel
 from chemprop.utils import get_metric_func
+from chemprop.args import TrainArgs
 
 
 def evaluate_predictions(preds: List[List[float]],
@@ -80,6 +81,7 @@ def evaluate(model: MoleculeModel,
              num_tasks: int,
              metrics: List[str],
              dataset_type: str,
+             args: TrainArgs,
              scaler: StandardScaler = None,
              logger: logging.Logger = None) -> Dict[str, List[float]]:
     """
@@ -97,8 +99,9 @@ def evaluate(model: MoleculeModel,
     """
     preds = predict(
         model=model,
+        args=args,
         data_loader=data_loader,
-        scaler=scaler
+        scaler=scaler,
     )
 
     results = evaluate_predictions(

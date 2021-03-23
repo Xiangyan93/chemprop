@@ -8,7 +8,7 @@ from graphdot.model.gaussian_process.gpr import GaussianProcessRegressor
 from graphdot.model.gaussian_process.nystrom import *
 from sklearn.gaussian_process._gpc import GaussianProcessClassifier as GPC
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
-from chemprop.graphdot.graph.hashgraph import Graph
+from chemprop.graphdot.graph.graph import Graph
 from chemprop.graphdot.kernel import get_kernels, PreCalcKernel
 
 
@@ -87,7 +87,8 @@ def add_gp_results(train_data: MoleculeDataset,
                    val_data: MoleculeDataset,
                    test_data: MoleculeDataset,
                    dataset_type: Literal['classification', 'regression'],
-                   kernel: PreCalcKernel
+                   kernel: PreCalcKernel,
+                   gp_type: List[Literal['predict', 'predict_u', 'kernel']]
                    ):
     """
     X_train = list(map(Graph.from_rdkit, train_data.mols(flatten=True)))
@@ -103,31 +104,33 @@ def add_gp_results(train_data: MoleculeDataset,
     if dataset_type == 'classification':
         pass
     else:
-        train_data.set_gp_predict(kernel(X_train))
-        val_data.set_gp_predict(kernel(X_val, X_train))
-        test_data.set_gp_predict(kernel(X_test, X_train))
-        """
-        from sklearn.metrics import mean_absolute_error
-        gpr = GPR(kernel=kernel, optimizer=None, alpha=0.01, normalize_y=True)
-        gpr.fit(X_train, y_train)
-        # y_pred, y_std = gpr.predict(X_train, return_std=True)
-        n = 50
-        y_pred, y_std = gpr.predict_loocv(X_train, y_train, return_std=True)
-        if y_pred.ndim == 1:
-            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-        train_data.set_gp_predict(y_pred)
-        train_data.set_gp_uncertainty(y_std)
-        y_pred, y_std = gpr.predict(X_val, return_std=True)
-        if y_pred.ndim == 1:
-            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-        val_data.set_gp_predict(y_pred)
-        val_data.set_gp_uncertainty(y_std)
-        y_pred, y_std = gpr.predict(X_test, return_std=True)
-        if y_pred.ndim == 1:
-            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-        test_data.set_gp_predict(y_pred)
-        test_data.set_gp_uncertainty(y_std)
-        """
+        n = 1
+        if 'kernel' in gp_type:
+            train_data.set_K(kernel(X_train))
+            val_data.set_K(kernel(X_val, X_train))
+            test_data.set_K(kernel(X_test, X_train))
+        elif 'predict' in gp_type or 'predict_u' in gp_type:
+            from sklearn.metrics import mean_absolute_error
+            gpr = GPR(kernel=kernel, optimizer=None, alpha=0.01, normalize_y=True)
+            gpr.fit(X_train, y_train)
+            # y_pred, y_std = gpr.predict(X_train, return_std=True)
+            y_pred, y_std = gpr.predict_loocv(X_train, y_train, return_std=True)
+            if y_pred.ndim == 1:
+                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+            train_data.set_gp_predict(y_pred)
+            train_data.set_gp_uncertainty(y_std)
+
+            y_pred, y_std = gpr.predict(X_val, return_std=True)
+            if y_pred.ndim == 1:
+                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+            val_data.set_gp_predict(y_pred)
+            val_data.set_gp_uncertainty(y_std)
+
+            y_pred, y_std = gpr.predict(X_test, return_std=True)
+            if y_pred.ndim == 1:
+                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+            test_data.set_gp_predict(y_pred)
+            test_data.set_gp_uncertainty(y_std)

@@ -1,7 +1,7 @@
 import threading
 from collections import OrderedDict
 from random import Random
-from typing import Dict, Iterator, List, Optional, Union
+from typing import Dict, Iterator, List, Optional, Union, Literal
 
 import numpy as np
 from torch.utils.data import DataLoader, Dataset, Sampler
@@ -81,6 +81,7 @@ class MoleculeDatapoint:
         self.atom_descriptors = atom_descriptors
         self.atom_features = atom_features
         self.bond_features = bond_features
+        self.K = None
         self.gp_predict = None
         self.gp_uncertainty = None
         self.overwrite_default_atom_features = overwrite_default_atom_features
@@ -151,6 +152,28 @@ class MoleculeDatapoint:
         :param features: A 1D numpy array of features for the molecule.
         """
         self.features = features
+
+    def get_features(self, gp_as_feature: Literal['truth', 'predict', 'predict_u', 'kernel'] = None):
+        if self.features is None:
+            features = []
+        else:
+            features = [self.features]
+        if gp_as_feature == 'truth':
+            features += [self.targets]
+        elif gp_as_feature == 'predict':
+            assert self.gp_predict is not None
+            features += [self.gp_predict]
+        elif gp_as_feature == 'predict_u':
+            assert self.gp_predict is not None
+            assert self.gp_uncertainty is not None
+            features += [self.gp_predict, self.gp_uncertainty]
+        elif gp_as_feature == 'kernel':
+            assert self.K is not None
+            features += [self.K]
+        if features:
+            return np.concatenate(features)
+        else:
+            return None
 
     def set_atom_descriptors(self, atom_descriptors: np.ndarray) -> None:
         """
@@ -292,27 +315,30 @@ class MoleculeDataset(Dataset):
 
         return self._batch_graph
 
-    def features(self) -> Optional[List[np.ndarray]]:
+    def features(self, gp_as_features: Literal['truth', 'predict', 'predict_u'] = None) -> Optional[List[np.ndarray]]:
         """
         Returns the features associated with each molecule (if they exist).
 
         :return: A list of 1D numpy arrays containing the features for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].features is None:
+        if len(self._data) == 0 or self._data[0].get_features(gp_as_features) is None:
             return None
 
-        return [d.features for d in self._data]
+        return [d.get_features(gp_as_features) for d in self._data]
 
-    def gp_predict(self) -> Optional[List[np.ndarray]]:
+    def gp_predict(self, gp_as_output: Literal['truth', 'predict', 'predict_u'] = None) -> Optional[List[np.ndarray]]:
         """
         Returns the GP prediction with each molecule (if they exist).
 
         :return: A list of 1D numpy arrays containing the GP prediction for each molecule or None if GP is not used.
         """
-        if len(self._data) == 0 or self._data[0].gp_predict is None:
+        if len(self._data) == 0:
             return None
-        # return [d.gp_predict for d in self._data]
-        return [np.r_[d.gp_predict, d.gp_uncertainty] for d in self._data]
+        if gp_as_output == 'truth':
+            return [d.raw_targets for d in self._data]
+        else:
+            return [d.gp_predict for d in self._data]
+        # return [np.r_[d.gp_predict, d.gp_uncertainty] for d in self._data]
 
     def gp_uncertainty(self) -> Optional[List[np.ndarray]]:
         if len(self._data) == 0 or self._data[0].gp_uncertainty is None:
@@ -491,6 +517,10 @@ class MoleculeDataset(Dataset):
         assert len(self._data) == len(targets)
         for i in range(len(self._data)):
             self._data[i].set_targets(targets[i])
+
+    def set_K(self, K) -> None:
+        for i, d in enumerate(self._data):
+            d.K = K[i]
 
     def set_gp_predict(self, gp_predict) -> None:
         if gp_predict.ndim == 1:
