@@ -114,6 +114,8 @@ class CommonArgs(Tap):
     @property
     def device(self) -> torch.device:
         """The :code:`torch.device` on which to load and process data and models."""
+        print(torch.cuda.is_available())
+        print(self.cuda)
         if not self.cuda:
             return torch.device('cpu')
 
