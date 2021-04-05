@@ -3,7 +3,7 @@
 """Adaptor for RDKit's Molecule objects"""
 import os
 CWD = os.path.dirname(os.path.abspath(__file__))
-from typing import Dict, List, Tuple, Optional, Literal
+from typing import Dict, List, Tuple, Optional
 import re
 import networkx as nx
 import pandas as pd
@@ -34,8 +34,7 @@ def get_atom_ring_stereo(
         atom: Chem.Atom,
         ring_idx : Tuple[int],
         depth: int = 5,
-        bond_orientation_dict: Optional[Dict[Tuple[int, int], int]] = None) \
-        -> Literal[-1, 0, 1]:
+        bond_orientation_dict: Optional[Dict[Tuple[int, int], int]] = None):
     """Return an atom is upward or downward refer to a ring plane.
 
     For atom in a ring. If it has 4 bonds. Two of them are included in the
@@ -160,9 +159,7 @@ def IsSymmetric(mol: Chem.Mol, ij: Tuple[int, int], depth: int = 2) -> bool:
         return False
 
 
-def get_chiral_tag(mol: Chem.Mol,
-                   atom: Chem.Atom,
-                   depth: int = 5) -> Literal[0, 1, 2, 3]:
+def get_chiral_tag(mol, atom, depth=5):
     """Get the chiral information of an atom in a molecule.
 
     Parameters
@@ -197,18 +194,21 @@ def get_chiral_tag(mol: Chem.Mol,
         return 1
 
 
+def get_group_id(atom):
+    return [atom.GetAtomicNum()]
+
+
 class rdkit_config:
-    def __init__(self, bond_type: Literal['order', 'type'] = 'order',
-                 set_morgan_identifier: bool = True,
-                 morgan_radius: int = 3,
-                 set_ring_membership: bool = True,
-                 set_ring_stereo: bool = True,
-                 depth: int = 5,
-                 set_elemental_mode: bool = False,
-                 set_hydrogen_explicit: bool = False,
+    def __init__(self, bond_type='order',
+                 set_morgan_identifier=True, morgan_radius=3,
+                 set_ring_membership=True,
+                 set_ring_stereo=True, depth=5,
+                 set_elemental_mode=False,
+                 set_hydrogen_explicit=False,
                  reaction_center=None, reactant_or_product='reactant',
                  concentration=1.0,
                  IsSanitized=True,
+                 set_group=True,
                  set_TPSA=False):
         self.bond_type = bond_type
         self.set_morgan_identifier = set_morgan_identifier
@@ -222,10 +222,19 @@ class rdkit_config:
         self.reactant_or_product = reactant_or_product
         self.concentration = concentration
         self.IsSanitized = IsSanitized
+        self.set_group = set_group
         self.set_TPSA = set_TPSA
         if self.set_elemental_mode:
             # read elemental modes.
             self.emode = pd.read_csv(os.path.join(CWD, 'emodes.dat'), sep='\s+')
+        if self.set_group:
+            self.group_dict = {
+                1: 'group_an1', 5: 'group_an5', 6: 'group_an6', 7: 'group_an7',
+                8: 'group_an8', 9: 'group_an9', 14: 'group_an14',
+                15: 'group_an15',
+                16: 'group_an16', 17: 'group_an17', 35: 'group_an35',
+                53: 'group_an53'
+            }
 
     @staticmethod
     def get_list_hash(l):
@@ -312,7 +321,11 @@ class rdkit_config:
                         f'{self.reactant_or_product}')
             else:
                 node['ReactingCenter'] = 0.0
-
+        if self.set_group:
+            node['GroupID'] = get_group_id(atom)
+            assert node['GroupID'][0] in self.group_dict
+            for key, value in self.group_dict.items():
+                node[value] = 1.0 if key in node['GroupID'] else 0.0
         # set ring information
         if self.set_ring_membership:
             node['RingSize_list'] = np.asarray(
@@ -469,8 +482,8 @@ def _from_rdkit(cls, mol, rdkit_config):
                     else:
                         g.edges[ij]['RingStereo'] = StereoOfRingBond
     #rdkit_config.set_node_propogation(g, mol, 'Chiral', depth=1)
-    rdkit_config.set_node_propogation(g, mol, 'AtomicNumber', depth=4, sum=False)
-    # rdkit_config.set_node_propogation(g, mol, 'Hcount', depth=1, sum=True)
+    rdkit_config.set_node_propogation(g, mol, 'AtomicNumber', depth=5, sum=False)
+    rdkit_config.set_node_propogation(g, mol, 'Hcount', depth=1, sum=True)
     #rdkit_config.set_node_propogation(g, mol, 'FirstNeighbors', depth=4)
     #rdkit_config.set_node_propogation(g, mol, 'Aromatic', depth=4)
     return _from_networkx(cls, g)

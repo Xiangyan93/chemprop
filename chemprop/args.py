@@ -114,8 +114,6 @@ class CommonArgs(Tap):
     @property
     def device(self) -> torch.device:
         """The :code:`torch.device` on which to load and process data and models."""
-        print(torch.cuda.is_available())
-        print(self.cuda)
         if not self.cuda:
             return torch.device('cpu')
 
@@ -360,6 +358,15 @@ class TrainArgs(CommonArgs):
     """Use GP graph kernel as NN features."""
     gp_as_output: Literal['truth', 'predict', 'predict_u'] = None
     """Use GP graph kernel as part of NN output."""
+    graph_hyperparameters: List[str] = None
+    """hyperparameters file for graph kernel."""
+    features_hyperparameters_file: str = None
+    """JSON file contains features hyperparameters"""
+    alpha: float = 0.01
+    """data noise used in gpr."""
+    kernel: str = None
+    """kernel file"""
+
 
     def __init__(self, *args, **kwargs) -> None:
         super(TrainArgs, self).__init__(*args, **kwargs)

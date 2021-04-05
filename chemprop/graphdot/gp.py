@@ -9,7 +9,7 @@ from graphdot.model.gaussian_process.nystrom import *
 from sklearn.gaussian_process._gpc import GaussianProcessClassifier as GPC
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
 from chemprop.graphdot.graph.graph import Graph
-from chemprop.graphdot.kernel import get_kernels, PreCalcKernel
+from chemprop.graphdot.kernels import PreCalcKernel
 
 
 def _predict(predict, X, return_std=False, return_cov=False, memory_save=True,
@@ -110,7 +110,6 @@ def add_gp_results(train_data: MoleculeDataset,
             val_data.set_K(kernel(X_val, X_train))
             test_data.set_K(kernel(X_test, X_train))
         elif 'predict' in gp_type or 'predict_u' in gp_type:
-            from sklearn.metrics import mean_absolute_error
             gpr = GPR(kernel=kernel, optimizer=None, alpha=0.01, normalize_y=True)
             gpr.fit(X_train, y_train)
             # y_pred, y_std = gpr.predict(X_train, return_std=True)

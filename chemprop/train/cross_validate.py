@@ -4,7 +4,8 @@ from logging import Logger
 import os
 import sys
 from typing import Callable, Dict, List, Tuple
-
+import json
+import pickle
 import numpy as np
 import pandas as pd
 
@@ -14,8 +15,8 @@ from chemprop.constants import TEST_SCORES_FILE_NAME, TRAIN_LOGGER_NAME
 from chemprop.data import get_data, get_task_names, MoleculeDataset, validate_dataset_type
 from chemprop.utils import create_logger, makedirs, timeit
 from chemprop.features import set_extra_atom_fdim, set_extra_bond_fdim
-from chemprop.graphdot.kernel import get_preCakc_kernel
 from chemprop.graphdot.graph.graph import Graph
+from chemprop.graphdot.kernels import PreCalcKernel
 
 
 @timeit(logger_name=TRAIN_LOGGER_NAME)
@@ -82,9 +83,13 @@ def cross_validate(args: TrainArgs,
 
     if args.gp or (args.gp_as_feature in ['predict', 'predict_u', 'kernel'] or \
             args.gp_as_output in ['predict', 'predict_u']):
-        graphs = list(map(Graph.from_rdkit, data.mols(flatten=True)))
-        Graph.unify_datatype(graphs, inplace=True)
-        data.kernel = get_preCakc_kernel(graphs, data.smiles(flatten=True))
+        smiles = data.smiles(flatten=True)
+        idx = np.argsort(smiles)
+        kernel_dict = pickle.load(open(args.kernel, 'rb'))
+        smiles = np.asarray(smiles)[idx]
+        K = kernel_dict['K'][idx][:, idx]
+        theta = kernel_dict['theta']
+        data.kernel = PreCalcKernel(smiles, K, theta)
 
     debug(f'Number of tasks = {args.num_tasks}')
 
