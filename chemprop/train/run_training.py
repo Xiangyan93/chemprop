@@ -1,7 +1,7 @@
 from logging import Logger
 import os
 from typing import Dict, List, Literal
-
+import json
 import numpy as np
 import pandas as pd
 from tensorboardX import SummaryWriter
@@ -95,7 +95,7 @@ def run_training(args: TrainArgs,
         gp_type = [args.gp_as_feature, args.gp_as_output]
         if args.gp:
             gp_type.append('predict')
-        add_gp_results(train_data, val_data, test_data, args.dataset_type,
+        add_gp_results(args, train_data, val_data, test_data,
                        data.kernel, gp_type)
 
     if args.dataset_type == 'classification':
@@ -302,6 +302,7 @@ def run_training(args: TrainArgs,
             data_loader=test_data_loader,
             scaler=scaler
         )
+
         test_scores = evaluate_predictions(
             preds=test_preds,
             targets=test_targets,
@@ -340,7 +341,7 @@ def run_training(args: TrainArgs,
         dataset_type=args.dataset_type,
         logger=logger
     )
-
+    from sklearn.metrics import roc_auc_score
     for metric, scores in ensemble_scores.items():
         # Average ensemble score
         avg_ensemble_test_score = np.nanmean(scores)
@@ -359,6 +360,9 @@ def run_training(args: TrainArgs,
         if args.gp:
             test_preds_dataframe['gp_predict'] = test_data.gp_predict()
             test_preds_dataframe['gp_uncertainty'] = test_data.gp_uncertainty()
+            test_preds_dataframe['gp_predict'] = test_preds_dataframe['gp_predict'].apply(lambda x: x.tolist())
+            test_preds_dataframe['gp_uncertainty'] = test_preds_dataframe[
+                'gp_uncertainty'].apply(lambda x: x.tolist() if x is not None else None)
         for i, task_name in enumerate(args.task_names):
             test_preds_dataframe[task_name] = [pred[i] for pred in
                                                avg_test_preds]

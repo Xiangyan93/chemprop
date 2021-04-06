@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 import pickle
 from typing import Dict, List, Literal
+import copy
 import math
 import numpy as np
 from graphdot.model.gaussian_process.gpr import GaussianProcessRegressor
 from graphdot.model.gaussian_process.nystrom import *
 from sklearn.gaussian_process._gpc import GaussianProcessClassifier as GPC
+from sklearn.svm import SVC
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
 from chemprop.graphdot.graph.graph import Graph
 from chemprop.graphdot.kernels import PreCalcKernel
@@ -83,10 +85,55 @@ class GPR(GaussianProcessRegressor):
         self._X = value
 
 
-def add_gp_results(train_data: MoleculeDataset,
+class SVMClassifier(SVC):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._SVC = SVC(*args, **kwargs)
+
+    @property
+    def kernel_(self):
+        return self._SVC.kernel
+
+    @staticmethod
+    def _remove_nan_X_y(X, y):
+        idx = ~np.isnan(y)
+        return np.asarray(X)[idx], y[idx]
+
+    def fit(self, X, y, sample_weight=None):
+        self.SVCs = []
+        if y.ndim == 1:
+            X_, y_ = self._remove_nan_X_y(X, y)
+            super().fit(X_, y_, sample_weight)
+        else:
+            for i in range(y.shape[1]):
+                SVC = copy.deepcopy(self._SVC)
+                X_, y_ = self._remove_nan_X_y(X, y[:, i])
+                SVC.fit(X_, y_, sample_weight)
+                self.SVCs.append(SVC)
+
+    def predict(self, X):
+        if self.SVCs:
+            y_mean = []
+            for SVC in self.SVCs:
+                y_mean.append(SVC.predict(X))
+            return np.concatenate(y_mean).reshape(len(y_mean), len(X)).T
+        else:
+            return super().predict(X)
+
+    def predict_proba(self, X):
+        if self.SVCs:
+            y_mean = []
+            for SVC in self.SVCs:
+                y_mean.append(SVC.predict_proba(X)[:, 1])
+            return np.concatenate(y_mean).reshape(len(y_mean), len(X)).T
+        else:
+            return super().predict_proba(X)[:, 1]
+
+
+def add_gp_results(args,
+                   train_data: MoleculeDataset,
                    val_data: MoleculeDataset,
                    test_data: MoleculeDataset,
-                   dataset_type: Literal['classification', 'regression'],
                    kernel: PreCalcKernel,
                    gp_type: List[Literal['predict', 'predict_u', 'kernel']]
                    ):
@@ -101,35 +148,52 @@ def add_gp_results(train_data: MoleculeDataset,
     y_train = np.asarray(train_data.targets())
     if y_train.shape[1] == 1:
         y_train = y_train.ravel()
-    if dataset_type == 'classification':
-        pass
+
+    if 'kernel' in gp_type:
+        train_data.set_K(kernel(X_train))
+        val_data.set_K(kernel(X_val, X_train))
+        test_data.set_K(kernel(X_test, X_train))
+    elif args.dataset_type == 'classification':
+        n = 1
+        svc = SVMClassifier(kernel=kernel, C=args.C, probability=True)
+        svc.fit(X_train, y_train)
+
+        y_pred = svc.predict_proba(X_train)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+        train_data.set_gp_predict(y_pred)
+
+        y_pred = svc.predict_proba(X_val)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+        val_data.set_gp_predict(y_pred)
+
+        y_pred = svc.predict_proba(X_test)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+        test_data.set_gp_predict(y_pred)
     else:
         n = 1
-        if 'kernel' in gp_type:
-            train_data.set_K(kernel(X_train))
-            val_data.set_K(kernel(X_val, X_train))
-            test_data.set_K(kernel(X_test, X_train))
-        elif 'predict' in gp_type or 'predict_u' in gp_type:
-            gpr = GPR(kernel=kernel, optimizer=None, alpha=0.01, normalize_y=True)
-            gpr.fit(X_train, y_train)
-            # y_pred, y_std = gpr.predict(X_train, return_std=True)
-            y_pred, y_std = gpr.predict_loocv(X_train, y_train, return_std=True)
-            if y_pred.ndim == 1:
-                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-            train_data.set_gp_predict(y_pred)
-            train_data.set_gp_uncertainty(y_std)
+        gpr = GPR(kernel=kernel, optimizer=None, alpha=args.alpha, normalize_y=True)
+        gpr.fit(X_train, y_train)
+        # y_pred, y_std = gpr.predict(X_train, return_std=True)
+        y_pred, y_std = gpr.predict_loocv(X_train, y_train, return_std=True)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+        train_data.set_gp_predict(y_pred)
+        train_data.set_gp_uncertainty(y_std)
 
-            y_pred, y_std = gpr.predict(X_val, return_std=True)
-            if y_pred.ndim == 1:
-                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-            val_data.set_gp_predict(y_pred)
-            val_data.set_gp_uncertainty(y_std)
+        y_pred, y_std = gpr.predict(X_val, return_std=True)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+        val_data.set_gp_predict(y_pred)
+        val_data.set_gp_uncertainty(y_std)
 
-            y_pred, y_std = gpr.predict(X_test, return_std=True)
-            if y_pred.ndim == 1:
-                y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
-                y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
-            test_data.set_gp_predict(y_pred)
-            test_data.set_gp_uncertainty(y_std)
+        y_pred, y_std = gpr.predict(X_test, return_std=True)
+        if y_pred.ndim == 1:
+            y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
+            y_std = np.concatenate([y_std.reshape(len(y_std), 1)]*n, axis=1)
+        test_data.set_gp_predict(y_pred)
+        test_data.set_gp_uncertainty(y_std)

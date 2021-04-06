@@ -364,6 +364,7 @@ class TrainArgs(CommonArgs):
     """JSON file contains features hyperparameters"""
     alpha: float = 0.01
     """data noise used in gpr."""
+    C: float = 1.0
     kernel: str = None
     """kernel file"""
 
