@@ -362,9 +362,9 @@ class TrainArgs(CommonArgs):
     """hyperparameters file for graph kernel."""
     features_hyperparameters_file: str = None
     """JSON file contains features hyperparameters"""
-    alpha: str = None
+    alpha: str = "0.01"
     """data noise used in gpr."""
-    C: str = None
+    C: str = '1.0'
     """C parameter used in Support Vector Machine."""
     kernel: str = None
     """kernel file"""
