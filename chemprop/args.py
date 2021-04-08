@@ -362,9 +362,10 @@ class TrainArgs(CommonArgs):
     """hyperparameters file for graph kernel."""
     features_hyperparameters_file: str = None
     """JSON file contains features hyperparameters"""
-    alpha: float = 0.01
+    alpha: str = None
     """data noise used in gpr."""
-    C: float = 1.0
+    C: str = None
+    """C parameter used in Support Vector Machine."""
     kernel: str = None
     """kernel file"""
 
@@ -377,6 +378,24 @@ class TrainArgs(CommonArgs):
         self._num_tasks = None
         self._features_size = None
         self._train_data_size = None
+
+    @property
+    def alpha_(self) -> float:
+        if isinstance(self.alpha, float):
+            return self.alpha
+        if os.path.exists(self.alpha):
+            return float(open(self.alpha, 'r').read())
+        else:
+            return float(self.alpha)
+
+    @property
+    def C_(self) -> float:
+        if isinstance(self.C, float):
+            return self.C
+        elif os.path.exists(self.C):
+            return float(open(self.C, 'r').read())
+        else:
+            return float(self.C)
 
     @property
     def metrics(self) -> List[str]:

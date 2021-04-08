@@ -155,7 +155,7 @@ def add_gp_results(args,
         test_data.set_K(kernel(X_test, X_train))
     elif args.dataset_type == 'classification':
         n = 1
-        svc = SVMClassifier(kernel=kernel, C=args.C, probability=True)
+        svc = SVMClassifier(kernel=kernel, C=args.C_, probability=True)
         svc.fit(X_train, y_train)
 
         y_pred = svc.predict_proba(X_train)
@@ -174,7 +174,7 @@ def add_gp_results(args,
         test_data.set_gp_predict(y_pred)
     else:
         n = 1
-        gpr = GPR(kernel=kernel, optimizer=None, alpha=args.alpha, normalize_y=True)
+        gpr = GPR(kernel=kernel, optimizer=None, alpha=args.alpha_, normalize_y=True)
         gpr.fit(X_train, y_train)
         # y_pred, y_std = gpr.predict(X_train, return_std=True)
         y_pred, y_std = gpr.predict_loocv(X_train, y_train, return_std=True)
