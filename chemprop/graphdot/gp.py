@@ -96,8 +96,11 @@ class SVMClassifier(SVC):
 
     @staticmethod
     def _remove_nan_X_y(X, y):
-        idx = ~np.isnan(y)
-        return np.asarray(X)[idx], y[idx]
+        if None in y:
+            idx = np.where(y!=None)[0]
+        else:
+            idx = ~np.isnan(y)
+        return np.asarray(X)[idx], y[idx].astype(int)
 
     def fit(self, X, y, sample_weight=None):
         self.SVCs = []
