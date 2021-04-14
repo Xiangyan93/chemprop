@@ -7,7 +7,7 @@ import math
 import numpy as np
 from graphdot.model.gaussian_process.gpr import GaussianProcessRegressor
 from graphdot.model.gaussian_process.nystrom import *
-from sklearn.gaussian_process._gpc import GaussianProcessClassifier as GPC
+from sklearn.gaussian_process._gpc import GaussianProcessClassifier
 from sklearn.svm import SVC
 from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, MoleculeDataset, set_cache_graph, split_data
 from chemprop.graphdot.graph.graph import Graph
@@ -133,6 +133,56 @@ class SVMClassifier(SVC):
             return super().predict_proba(X)[:, 1]
 
 
+class GPC(GaussianProcessClassifier):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._GPC = GaussianProcessClassifier(*args, **kwargs)
+
+    @property
+    def kernel_(self):
+        return self._GPC.kernel
+
+    @staticmethod
+    def _remove_nan_X_y(X, y):
+        if None in y:
+            idx = np.where(y!=None)[0]
+        else:
+            idx = ~np.isnan(y)
+        return np.asarray(X)[idx].reshape(-1, 1), y[idx].astype(int)
+
+    def fit(self, X, y):
+        self.GPCs = []
+        if y.ndim == 1:
+            X_, y_ = self._remove_nan_X_y(X, y)
+            super().fit(X_, y_)
+        else:
+            for i in range(y.shape[1]):
+                GPC = copy.deepcopy(self._GPC)
+                X_, y_ = self._remove_nan_X_y(X, y[:, i])
+                GPC.fit(X_, y_)
+                self.GPCs.append(GPC)
+
+    def predict(self, X):
+        if self.GPCs:
+            y_mean = []
+            for GPC in self.GPCs:
+                y_mean.append(GPC.predict(X))
+            return np.concatenate(y_mean).reshape(len(y_mean), len(X)).T
+        else:
+            return super().predict(X)
+
+    def predict_proba(self, X):
+        if self.GPCs:
+            y_mean = []
+            for GPC in self.GPCs:
+                print(GPC.predict_proba(X))
+                y_mean.append(GPC.predict_proba(X)[:, 1])
+            # print(y_mean)
+            return np.concatenate(y_mean).reshape(len(y_mean), len(X)).T
+        else:
+            return super().predict_proba(X)[:, 1]
+
+
 def add_gp_results(args,
                    train_data: MoleculeDataset,
                    val_data: MoleculeDataset,
@@ -158,20 +208,21 @@ def add_gp_results(args,
         test_data.set_K(kernel(X_test, X_train))
     elif args.dataset_type == 'classification':
         n = 1
-        svc = SVMClassifier(kernel=kernel, C=args.C_, probability=True)
-        svc.fit(X_train, y_train)
+        # svc = SVMClassifier(kernel=kernel, C=args.C_, probability=True)
+        model = GaussianProcessClassifier(kernel=kernel, optimizer=None, n_jobs=args.num_workers)
+        model.fit(X_train, y_train)
 
-        y_pred = svc.predict_proba(X_train)
+        y_pred = model.predict_proba(X_train)
         if y_pred.ndim == 1:
             y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
         train_data.set_gp_predict(y_pred)
 
-        y_pred = svc.predict_proba(X_val)
+        y_pred = model.predict_proba(X_val)
         if y_pred.ndim == 1:
             y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
         val_data.set_gp_predict(y_pred)
 
-        y_pred = svc.predict_proba(X_test)
+        y_pred = model.predict_proba(X_test)
         if y_pred.ndim == 1:
             y_pred = np.concatenate([y_pred.reshape(len(y_pred), 1)]*n, axis=1)
         test_data.set_gp_predict(y_pred)
