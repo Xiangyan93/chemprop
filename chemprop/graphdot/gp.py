@@ -209,7 +209,7 @@ def add_gp_results(args,
     elif args.dataset_type == 'classification':
         n = 1
         # svc = SVMClassifier(kernel=kernel, C=args.C_, probability=True)
-        model = GaussianProcessClassifier(kernel=kernel, optimizer=None, n_jobs=args.num_workers)
+        model = GPC(kernel=kernel, optimizer=None, n_jobs=args.num_workers)
         model.fit(X_train, y_train)
 
         y_pred = model.predict_proba(X_train)
