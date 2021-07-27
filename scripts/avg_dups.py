@@ -1,36 +1,27 @@
 """Averages the target values for duplicate smiles strings. (Only used for regression datasets.)"""
 
+from argparse import ArgumentParser
 from collections import defaultdict
 import os
 import sys
-from typing import List
-
 import numpy as np
-from tap import Tap  # pip install typed-argument-parser (https://github.com/swansonk14/typed-argument-parser)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from chemprop.data import get_data, get_header
+from chemprop.data.utils import get_data, get_header
 
 
-class Args(Tap):
-    data_path: str  # Path to data CSV file
-    smiles_columns: List[str] = None  # Name of the columns containing SMILES strings. By default, uses the first column.
-    target_columns: List[str] = None  # Name of the columns containing target values. By default, uses all columns except the SMILES column.
-    save_path: str  # Path where average data CSV file will be saved
-
-
-def average_duplicates(args: Args):
+def average_duplicates(args):
     """Averages duplicate data points in a dataset."""
     print('Loading data')
     header = get_header(args.data_path)
-    data = get_data(path=args.data_path, smiles_columns=args.smiles_columns, target_columns=args.target_columns)
+    data = get_data(path=args.data_path)
     print(f'Data size = {len(data):,}')
 
     # Map SMILES string to lists of targets
     smiles_in_order = []
     smiles_to_targets = defaultdict(list)
-    for smiles, targets in zip(data.smiles(flatten=True), data.targets()):
+    for smiles, targets in zip(data.smiles(), data.targets()):
         smiles_to_targets[smiles].append(targets)
         if len(smiles_to_targets[smiles]) == 1:
             smiles_in_order.append(smiles)
@@ -67,4 +58,11 @@ def average_duplicates(args: Args):
 
 
 if __name__ == '__main__':
-    average_duplicates(Args().parse_args())
+    parser = ArgumentParser()
+    parser.add_argument('--data_path', type=str,
+                        help='Path to data CSV file')
+    parser.add_argument('--save_path', type=str,
+                        help='Path where average data CSV file will be saved')
+    args = parser.parse_args()
+
+    average_duplicates(args)

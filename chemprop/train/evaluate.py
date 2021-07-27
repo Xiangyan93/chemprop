@@ -1,36 +1,33 @@
-from collections import defaultdict
 import logging
-from typing import Dict, List
+from typing import Callable, List
+
+import torch.nn as nn
 
 from .predict import predict
-from chemprop.data import MoleculeDataLoader, StandardScaler
-from chemprop.models import MoleculeModel
-from chemprop.utils import get_metric_func
+from chemprop.data import MoleculeDataset, StandardScaler
 
 
 def evaluate_predictions(preds: List[List[float]],
                          targets: List[List[float]],
                          num_tasks: int,
-                         metrics: List[str],
+                         metric_func: Callable,
                          dataset_type: str,
-                         logger: logging.Logger = None) -> Dict[str, List[float]]:
+                         logger: logging.Logger = None) -> List[float]:
     """
-    Evaluates predictions using a metric function after filtering out invalid targets.
+    Evaluates predictions using a metric function and filtering out invalid targets.
 
-    :param preds: A list of lists of shape :code:`(data_size, num_tasks)` with model predictions.
-    :param targets: A list of lists of shape :code:`(data_size, num_tasks)` with targets.
+    :param preds: A list of lists of shape (data_size, num_tasks) with model predictions.
+    :param targets: A list of lists of shape (data_size, num_tasks) with targets.
     :param num_tasks: Number of tasks.
-    :param metrics: A list of names of metric functions.
+    :param metric_func: Metric function which takes in a list of targets and a list of predictions.
     :param dataset_type: Dataset type.
-    :param logger: A logger to record output.
-    :return: A dictionary mapping each metric in :code:`metrics` to a list of values for each task.
+    :param logger: Logger.
+    :return: A list with the score for each task based on `metric_func`.
     """
     info = logger.info if logger is not None else print
 
-    metric_to_func = {metric: get_metric_func(metric) for metric in metrics}
-
     if len(preds) == 0:
-        return {metric: [float('nan')] * num_tasks for metric in metrics}
+        return [float('nan')] * num_tasks
 
     # Filter out empty targets
     # valid_preds and valid_targets have shape (num_tasks, data_size)
@@ -43,7 +40,7 @@ def evaluate_predictions(preds: List[List[float]],
                 valid_targets[i].append(targets[j][i])
 
     # Compute metric
-    results = defaultdict(list)
+    results = []
     for i in range(num_tasks):
         # # Skip if all targets or preds are identical, otherwise we'll crash during classification
         if dataset_type == 'classification':
@@ -56,56 +53,52 @@ def evaluate_predictions(preds: List[List[float]],
                 info('Warning: Found a task with predictions all 0s or all 1s')
 
             if nan:
-                for metric in metrics:
-                    results[metric].append(float('nan'))
+                results.append(float('nan'))
                 continue
 
         if len(valid_targets[i]) == 0:
             continue
 
-        for metric, metric_func in metric_to_func.items():
-            if dataset_type == 'multiclass':
-                results[metric].append(metric_func(valid_targets[i], valid_preds[i],
-                                                   labels=list(range(len(valid_preds[i][0])))))
-            else:
-                results[metric].append(metric_func(valid_targets[i], valid_preds[i]))
-
-    results = dict(results)
+        results.append(metric_func(valid_targets[i], valid_preds[i]))
 
     return results
 
 
-def evaluate(model: MoleculeModel,
-             data_loader: MoleculeDataLoader,
+def evaluate(model: nn.Module,
+             data: MoleculeDataset,
              num_tasks: int,
-             metrics: List[str],
+             metric_func: Callable,
+             batch_size: int,
              dataset_type: str,
              scaler: StandardScaler = None,
-             logger: logging.Logger = None) -> Dict[str, List[float]]:
+             logger: logging.Logger = None) -> List[float]:
     """
-    Evaluates an ensemble of models on a dataset by making predictions and then evaluating the predictions.
+    Evaluates an ensemble of models on a dataset.
 
-    :param model: A :class:`~chemprop.models.model.MoleculeModel`.
-    :param data_loader: A :class:`~chemprop.data.data.MoleculeDataLoader`.
+    :param model: A model.
+    :param data: A MoleculeDataset.
     :param num_tasks: Number of tasks.
-    :param metrics: A list of names of metric functions.
+    :param metric_func: Metric function which takes in a list of targets and a list of predictions.
+    :param batch_size: Batch size.
     :param dataset_type: Dataset type.
-    :param scaler: A :class:`~chemprop.features.scaler.StandardScaler` object fit on the training targets.
-    :param logger: A logger to record output.
-    :return: A dictionary mapping each metric in :code:`metrics` to a list of values for each task.
-
+    :param scaler: A StandardScaler object fit on the training targets.
+    :param logger: Logger.
+    :return: A list with the score for each task based on `metric_func`.
     """
     preds = predict(
         model=model,
-        data_loader=data_loader,
+        data=data,
+        batch_size=batch_size,
         scaler=scaler
     )
 
+    targets = data.targets()
+
     results = evaluate_predictions(
         preds=preds,
-        targets=data_loader.targets,
+        targets=targets,
         num_tasks=num_tasks,
-        metrics=metrics,
+        metric_func=metric_func,
         dataset_type=dataset_type,
         logger=logger
     )

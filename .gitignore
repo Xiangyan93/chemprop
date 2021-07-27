@@ -3,8 +3,8 @@
 *.DS_Store
 *.vscode
 *.csv
+!uncertainty_evaluation/evaluations.csv
 *.pt
 *.json
 *.sqlite3
-chemprop.egg-info
-docs/build
+*.txt

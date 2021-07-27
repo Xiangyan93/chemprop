@@ -1,33 +1,23 @@
 """Computes the similarity of molecular scaffolds between two datasets."""
 
-from itertools import product
-import math
+from argparse import ArgumentParser
 import os
 import sys
+
+from itertools import product
 from typing import List
-from typing_extensions import Literal
 
-
+import math
 import numpy as np
 from rdkit import Chem
 from rdkit import DataStructs
 from rdkit.Chem import AllChem
 from tqdm import tqdm
-from tap import Tap  # pip install typed-argument-parser (https://github.com/swansonk14/typed-argument-parser)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
-from chemprop.data import get_smiles, scaffold_to_smiles
-
-
-class Args(Tap):
-    data_path_1: str  # Path to first data CSV file
-    data_path_2: str  # Path to second data CSV file
-    smiles_column_1: str = None  # Name of the column containing SMILES strings for the first data. By default, uses the first column.
-    smiles_column_2: str = None  # Name of the column containing SMILES strings for the second data. By default, uses the first column.
-    similarity_measure: Literal['scaffold', 'morgan']  # Similarity measure to use to compare the two datasets
-    radius: int = 3  # Radius of Morgan fingerprint
-    sample_rate: float = 1.0  # Rate at which to sample pairs of molecules for Morgan similarity (to reduce time)
+from chemprop.data import scaffold_to_smiles
+from chemprop.data.utils import get_data
 
 
 def scaffold_similarity(smiles_1: List[str], smiles_2: List[str]):
@@ -46,6 +36,7 @@ def scaffold_similarity(smiles_1: List[str], smiles_2: List[str]):
 
     smiles_to_scaffold = {smiles: scaffold for scaffold, smiles_set in scaffold_to_smiles_1.items() for smiles in smiles_set}
     smiles_to_scaffold.update({smiles: scaffold for scaffold, smiles_set in scaffold_to_smiles_2.items() for smiles in smiles_set})
+
 
     # Determine similarity
     scaffolds_1, scaffolds_2 = set(scaffolds_1), set(scaffolds_2)
@@ -126,7 +117,7 @@ def morgan_similarity(smiles_1: List[str], smiles_2: List[str], radius: int, sam
     for smile_1, smile_2 in tqdm(product(sample_smiles_1, sample_smiles_2), total=sample_num_pairs):
         mol_1, mol_2 = Chem.MolFromSmiles(smile_1), Chem.MolFromSmiles(smile_2)
         fp_1, fp_2 = AllChem.GetMorganFingerprint(mol_1, radius), AllChem.GetMorganFingerprint(mol_2, radius)
-        similarity = DataStructs.TanimotoSimilarity(fp_1, fp_2)
+        similarity = DataStructs.DiceSimilarity(fp_1, fp_2)
         similarities.append(similarity)
     similarities = np.array(similarities)
 
@@ -141,14 +132,29 @@ def morgan_similarity(smiles_1: List[str], smiles_2: List[str], radius: int, sam
 
 
 if __name__ == '__main__':
-    args = Args().parse_args()
+    parser = ArgumentParser()
+    parser.add_argument('--data_path_1', type=str, required=True,
+                        help='Path to first data CSV file')
+    parser.add_argument('--data_path_2', type=str, required=True,
+                        help='Path to second data CSV file')
+    parser.add_argument('--compound_names_1', action='store_true', default=False,
+                        help='Whether data_path_1 has compound names in addition to smiles')
+    parser.add_argument('--compound_names_2', action='store_true', default=False,
+                        help='Whether data_path_2 has compound names in addition to smiles')
+    parser.add_argument('--similarity_measure', type=str, required=True, choices=['scaffold', 'morgan'],
+                        help='Similarity measure to use to compare the two datasets')
+    parser.add_argument('--radius', type=int, default=3,
+                        help='Radius of Morgan fingerprint')
+    parser.add_argument('--sample_rate', type=float, default=1.0,
+                        help='Rate at which to sample pairs of molecules for Morgan similarity (to reduce time)')
+    args = parser.parse_args()
 
-    smiles_1 = get_smiles(path=args.data_path_1, smiles_columns=args.smiles_column_1, flatten=True)
-    smiles_2 = get_smiles(path=args.data_path_2, smiles_columns=args.smiles_column_2, flatten=True)
+    data_1 = get_data(path=args.data_path_1, use_compound_names=args.compound_names_1)
+    data_2 = get_data(path=args.data_path_2, use_compound_names=args.compound_names_2)
 
     if args.similarity_measure == 'scaffold':
-        scaffold_similarity(smiles_1, smiles_2)
+        scaffold_similarity(data_1.smiles(), data_2.smiles())
     elif args.similarity_measure == 'morgan':
-        morgan_similarity(smiles_1, smiles_2, args.radius, args.sample_rate)
+        morgan_similarity(data_1.smiles(), data_2.smiles(), args.radius, args.sample_rate)
     else:
         raise ValueError(f'Similarity measure "{args.similarity_measure}" not supported.')

@@ -1,8 +1,2 @@
-from .model import MoleculeModel
-from .mpn import MPN, MPNEncoder
-
-__all__ = [
-    'MoleculeModel',
-    'MPN',
-    'MPNEncoder'
-]
+from .model import build_model, MoleculeModel
+from .residual_models import train_residual_model

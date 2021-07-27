@@ -1,170 +1,156 @@
-from typing import List, Union
+from argparse import Namespace
 
-import numpy as np
-from rdkit import Chem
+from sklearn.gaussian_process import GaussianProcessClassifier, GaussianProcessRegressor
 import torch
 import torch.nn as nn
 
 from .mpn import MPN
-from chemprop.args import TrainArgs
-from chemprop.features import BatchMolGraph
 from chemprop.nn_utils import get_activation_function, initialize_weights
 
 
-class MoleculeModel(nn.Module):
-    """A :class:`MoleculeModel` is a model which contains a message passing network following by feed-forward layers."""
+class EvaluationDropout(nn.Dropout):
+    def forward(self, input):
+        return nn.functional.dropout(input, p = self.p)
 
-    def __init__(self, args: TrainArgs, featurizer: bool = False):
+
+class MoleculeModel(nn.Module):
+    """A MoleculeModel is a model which contains a message passing network following by feed-forward layers."""
+
+    def __init__(self, classification: bool, uncertainty: bool = False):
         """
-        :param args: A :class:`~chemprop.args.TrainArgs` object containing model arguments.
-        :param featurizer: Whether the model should act as a featurizer, i.e., outputting the
-                           learned features from the last layer prior to prediction rather than
-                           outputting the actual property predictions.
+        Initializes the MoleculeModel.
+
+        :param classification: Whether the model is a classification model.
+        :param uncertainty: Whether uncertainty values should be predicted.
         """
         super(MoleculeModel, self).__init__()
 
-        self.classification = args.dataset_type == 'classification'
-        self.multiclass = args.dataset_type == 'multiclass'
-        self.featurizer = featurizer
-
-        self.output_size = args.num_tasks
-        if self.multiclass:
-            self.output_size *= args.multiclass_num_classes
+        self.classification = classification
+        self.uncertainty = uncertainty
 
         if self.classification:
             self.sigmoid = nn.Sigmoid()
 
-        if self.multiclass:
-            self.multiclass_softmax = nn.Softmax(dim=2)
+        self.use_last_hidden = True
 
-        self.create_encoder(args)
-        self.create_ffn(args)
-
-        initialize_weights(self)
-
-    def create_encoder(self, args: TrainArgs) -> None:
+    def create_encoder(self, args: Namespace):
         """
         Creates the message passing encoder for the model.
 
-        :param args: A :class:`~chemprop.args.TrainArgs` object containing model arguments.
+        :param args: Arguments.
         """
         self.encoder = MPN(args)
+        self.args = args
 
-    def create_ffn(self, args: TrainArgs) -> None:
+    def create_ffn(self, args: Namespace):
         """
-        Creates the feed-forward layers for the model.
+        Creates the feed-forward network for the model.
 
-        :param args: A :class:`~chemprop.args.TrainArgs` object containing model arguments.
+        :param args: Arguments.
         """
-        self.multiclass = args.dataset_type == 'multiclass'
-        if self.multiclass:
-            self.num_classes = args.multiclass_num_classes
         if args.features_only:
             first_linear_dim = args.features_size
         else:
-            first_linear_dim = args.hidden_size * args.number_of_molecules
+            first_linear_dim = args.hidden_size
             if args.use_input_features:
                 first_linear_dim += args.features_size
 
-        if args.atom_descriptors == 'descriptor':
-            first_linear_dim += args.atom_descriptors_size
+        # When using dropout for uncertainty, use dropouts for evaluation in addition to training.
+        if args.uncertainty == 'dropout':
+            dropout = EvaluationDropout(args.dropout)
+        else:
+            dropout = nn.Dropout(args.dropout)
 
-        dropout = nn.Dropout(args.dropout)
         activation = get_activation_function(args.activation)
+
+        output_size = args.output_size
+
+        if self.uncertainty:
+            output_size *= 2
 
         # Create FFN layers
         if args.ffn_num_layers == 1:
             ffn = [
                 dropout,
-                nn.Linear(first_linear_dim, self.output_size)
+                nn.Linear(first_linear_dim, output_size)
             ]
         else:
             ffn = [
                 dropout,
                 nn.Linear(first_linear_dim, args.ffn_hidden_size)
             ]
-            for _ in range(args.ffn_num_layers - 2):
+            for _ in range(args.ffn_num_layers - 3):
                 ffn.extend([
                     activation,
                     dropout,
                     nn.Linear(args.ffn_hidden_size, args.ffn_hidden_size),
                 ])
+
             ffn.extend([
                 activation,
                 dropout,
-                nn.Linear(args.ffn_hidden_size, self.output_size),
+                nn.Linear(args.ffn_hidden_size, args.last_hidden_size),
+            ])
+
+            ffn.extend([
+                activation,
+                dropout,
+                nn.Linear(args.last_hidden_size, output_size),
             ])
 
         # Create FFN model
         self.ffn = nn.Sequential(*ffn)
 
-    def featurize(self,
-                  batch: Union[List[str], List[Chem.Mol], BatchMolGraph],
-                  features_batch: List[np.ndarray] = None,
-                  atom_descriptors_batch: List[np.ndarray] = None,
-                  atom_features_batch: List[np.ndarray] = None,
-                  bond_features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
+    def forward(self, *input):
         """
-        Computes feature vectors of the input by running the model except for the last layer.
+        Runs the MoleculeModel on input.
 
-        :param batch: A list of SMILES, a list of RDKit molecules, or a
-                      :class:`~chemprop.features.featurization.BatchMolGraph`.
-        :param features_batch: A list of numpy arrays containing additional features.
-        :param atom_descriptors_batch: A list of numpy arrays containing additional atom descriptors.
-        :param atom_features_batch: A list of numpy arrays containing additional atom features.
-        :param bond_features_batch: A list of numpy arrays containing additional bond features.
-        :return: The feature vectors computed by the :class:`MoleculeModel`.
+        :param input: Input.
+        :return: The output of the MoleculeModel.
         """
-        return self.ffn[:-1](self.encoder(batch, features_batch, atom_descriptors_batch,
-                                          atom_features_batch, bond_features_batch))
+        ffn = self.ffn if self.use_last_hidden else nn.Sequential(
+            *list(self.ffn.children())[:-1])
+        output = ffn(self.encoder(*input))
 
-    def fingerprint(self,
-                  batch: Union[List[str], List[Chem.Mol], BatchMolGraph],
-                  features_batch: List[np.ndarray] = None,
-                  atom_descriptors_batch: List[np.ndarray] = None) -> torch.FloatTensor:
-        """
-        Encodes the fingerprint vectors of the input molecules by passing the inputs through the MPNN and returning
-        the latent representation before the FFNN.
+        if self.uncertainty:
+            even_indices = torch.tensor(range(0, list(output.size())[1], 2))
+            odd_indices = torch.tensor(range(1, list(output.size())[1], 2))
 
-        :param batch: A list of SMILES, a list of RDKit molecules, or a
-                      :class:`~chemprop.features.featurization.BatchMolGraph`.
-        :param features_batch: A list of numpy arrays containing additional features.
-        :param atom_descriptors_batch: A list of numpy arrays containing additional atom descriptors.
-        :return: The fingerprint vectors calculated through the MPNN.
-        """
-        return self.encoder(batch, features_batch, atom_descriptors_batch)
+            if self.args.cuda:
+                even_indices = even_indices.cuda()
+                odd_indices = odd_indices.cuda()
 
-    def forward(self,
-                batch: Union[List[str], List[Chem.Mol], BatchMolGraph],
-                features_batch: List[np.ndarray] = None,
-                atom_descriptors_batch: List[np.ndarray] = None,
-                atom_features_batch: List[np.ndarray] = None,
-                bond_features_batch: List[np.ndarray] = None) -> torch.FloatTensor:
-        """
-        Runs the :class:`MoleculeModel` on input.
+            predicted_means = torch.index_select(output, 1, even_indices)
+            predicted_uncertainties = torch.index_select(output, 1, odd_indices)
+            capped_uncertainties = nn.functional.softplus(predicted_uncertainties)
 
-        :param batch: A list of SMILES, a list of RDKit molecules, or a
-                      :class:`~chemprop.features.featurization.BatchMolGraph`.
-        :param features_batch: A list of numpy arrays containing additional features.
-        :param atom_descriptors_batch: A list of numpy arrays containing additional atom descriptors.
-        :param atom_features_batch: A list of numpy arrays containing additional atom features.
-        :param bond_features_batch: A list of numpy arrays containing additional bond features.
-        :return: The output of the :class:`MoleculeModel`, which is either property predictions
-                 or molecule features if :code:`self.featurizer=True`.
-        """
-        if self.featurizer:
-            return self.featurize(batch, features_batch, atom_descriptors_batch,
-                                  atom_features_batch, bond_features_batch)
-
-        output = self.ffn(self.encoder(batch, features_batch, atom_descriptors_batch,
-                                       atom_features_batch, bond_features_batch))
+            output = torch.stack((predicted_means, capped_uncertainties), dim = 2).view(output.size())
 
         # Don't apply sigmoid during training b/c using BCEWithLogitsLoss
-        if self.classification and not self.training:
+        if self.classification and not self.training and self.use_last_hidden:
             output = self.sigmoid(output)
-        if self.multiclass:
-            output = output.reshape((output.size(0), -1, self.num_classes))  # batch size x num targets x num classes per target
-            if not self.training:
-                output = self.multiclass_softmax(output)  # to get probabilities during evaluation, but not during training as we're using CrossEntropyLoss
 
         return output
+
+
+def build_model(args: Namespace) -> nn.Module:
+    """
+    Builds a MoleculeModel, which is a message passing neural network + feed-forward layers.
+
+    :param args: Arguments.
+    :return: A MoleculeModel containing the MPN encoder along with final linear layers with parameters initialized.
+    """
+    output_size = args.num_tasks
+    args.output_size = output_size
+
+    is_classifier = args.dataset_type == 'classification'
+    if args.uncertainty == 'mve':
+        model = MoleculeModel(classification=is_classifier, uncertainty=True)
+    else:
+        model = MoleculeModel(classification=is_classifier)
+    model.create_encoder(args)
+    model.create_ffn(args)
+
+    initialize_weights(model)
+
+    return model
