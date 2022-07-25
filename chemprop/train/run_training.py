@@ -146,10 +146,10 @@ def run_training(args: TrainArgs,
     debug(f'Total size = {len(data):,} | '
           f'train size = {len(train_data):,} | val size = {len(val_data):,} | test size = {len(test_data):,}')
 
-    if len(val_data) == 0:
-        raise ValueError('The validation data split is empty. During normal chemprop training (non-sklearn functions), \
-            a validation set is required to conduct early stopping according to the selected evaluation metric. This \
-            may have occurred because validation data provided with `--separate_val_path` was empty or contained only invalid molecules.')
+    #if len(val_data) == 0:
+    #    raise ValueError('The validation data split is empty. During normal chemprop training (non-sklearn functions), \
+    #        a validation set is required to conduct early stopping according to the selected evaluation metric. This \
+    #        may have occurred because validation data provided with `--separate_val_path` was empty or contained only invalid molecules.')
 
     if len(test_data) == 0:
         debug('The test data split is empty. This may be either because splitting with no test set was selected, \
@@ -310,12 +310,9 @@ def run_training(args: TrainArgs,
 
             # Save model checkpoint if improved validation score
             mean_val_score = multitask_mean(val_scores[args.metric], metric=args.metric)
-            if args.minimize_score and mean_val_score < best_score or \
-                    not args.minimize_score and mean_val_score > best_score:
-                best_score, best_epoch = mean_val_score, epoch
-                save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model, scaler, features_scaler,
-                                atom_descriptor_scaler, bond_feature_scaler, args)
-
+        save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model, scaler, features_scaler,
+                        atom_descriptor_scaler, bond_feature_scaler, args)
+        best_epoch = args.epochs - 1
         # Evaluate on test set using model with best validation score
         info(f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
         model = load_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), device=args.device, logger=logger)
