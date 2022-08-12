@@ -1,4 +1,4 @@
-from typing import Callable, List, Union, Optional
+from typing import Callable, List, Union
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -26,7 +26,7 @@ def register_features_generator(features_generator_name: str) -> Callable[[Featu
     return decorator
 
 
-def get_features_generator(features_generator_name: Optional[str, FeaturesGenerator]) -> FeaturesGenerator:
+def get_features_generator(features_generator_name: Union[str, FeaturesGenerator]) -> FeaturesGenerator:
     """
     Gets a registered features generator by name.
 
