@@ -1,4 +1,4 @@
-from typing import Callable, List, Union
+from typing import Callable, List, Union, Optional
 
 import numpy as np
 from rdkit import Chem, DataStructs
@@ -26,13 +26,16 @@ def register_features_generator(features_generator_name: str) -> Callable[[Featu
     return decorator
 
 
-def get_features_generator(features_generator_name: str) -> FeaturesGenerator:
+def get_features_generator(features_generator_name: Optional[str, FeaturesGenerator]) -> FeaturesGenerator:
     """
     Gets a registered features generator by name.
 
     :param features_generator_name: The name of the features generator.
     :return: The desired features generator.
     """
+    if features_generator_name.__class__ is not str:
+        return features_generator_name
+
     if features_generator_name not in FEATURES_GENERATOR_REGISTRY:
         raise ValueError(f'Features generator "{features_generator_name}" could not be found. '
                          f'If this generator relies on rdkit features, you may need to install descriptastorus.')
