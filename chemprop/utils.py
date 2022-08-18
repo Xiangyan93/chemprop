@@ -465,7 +465,7 @@ def build_lr_scheduler(
         optimizer=optimizer,
         warmup_epochs=[args.warmup_epochs],
         total_epochs=total_epochs or [args.epochs] * args.num_lrs,
-        steps_per_epoch=args.train_data_size // args.batch_size,
+        steps_per_epoch=args.train_data_size // args.batch_size + 1,
         init_lr=[args.init_lr],
         max_lr=[args.max_lr],
         final_lr=[args.final_lr],

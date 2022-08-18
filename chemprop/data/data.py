@@ -245,7 +245,7 @@ class MoleculeDataset(Dataset):
         r"""
         :param data: A list of :class:`MoleculeDatapoint`\ s.
         """
-        self._data = data
+        self.data = data
         self._batch_graph = None
         self._random = Random()
 
@@ -257,9 +257,9 @@ class MoleculeDataset(Dataset):
         :return: A list of SMILES or a list of lists of SMILES, depending on :code:`flatten`.
         """
         if flatten:
-            return [smiles for d in self._data for smiles in d.smiles]
+            return [smiles for d in self.data for smiles in d.smiles]
 
-        return [d.smiles for d in self._data]
+        return [d.smiles for d in self.data]
 
     def mols(self, flatten: bool = False) -> Union[List[Chem.Mol], List[List[Chem.Mol]], List[Tuple[Chem.Mol, Chem.Mol]], List[List[Tuple[Chem.Mol, Chem.Mol]]]]:
         """
@@ -269,9 +269,9 @@ class MoleculeDataset(Dataset):
         :return: A list of SMILES or a list of lists of RDKit molecules, depending on :code:`flatten`.
         """
         if flatten:
-            return [mol for d in self._data for mol in d.mol]
+            return [mol for d in self.data for mol in d.mol]
 
-        return [d.mol for d in self._data]
+        return [d.mol for d in self.data]
 
     @property
     def number_of_molecules(self) -> int:
@@ -280,7 +280,7 @@ class MoleculeDataset(Dataset):
 
         :return: The number of molecules.
         """
-        return self._data[0].number_of_molecules if len(self._data) > 0 else None
+        return self.data[0].number_of_molecules if len(self.data) > 0 else None
 
     def batch_graph(self) -> List[BatchMolGraph]:
         r"""
@@ -299,7 +299,7 @@ class MoleculeDataset(Dataset):
             self._batch_graph = []
 
             mol_graphs = []
-            for d in self._data:
+            for d in self.data:
                 mol_graphs_list = []
                 for s, m in zip(d.smiles, d.mol):
                     if s in SMILES_TO_GRAPH:
@@ -327,10 +327,10 @@ class MoleculeDataset(Dataset):
 
         :return: A list of 1D numpy arrays containing the features for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].features is None:
+        if len(self.data) == 0 or self.data[0].features is None:
             return None
 
-        return [d.features for d in self._data]
+        return [d.features for d in self.data]
 
     def phase_features(self) -> List[np.ndarray]:
         """
@@ -338,10 +338,10 @@ class MoleculeDataset(Dataset):
 
         :return: A list of 1D numpy arrays containing the phase features for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].phase_features is None:
+        if len(self.data) == 0 or self.data[0].phase_features is None:
             return None
 
-        return [d.phase_features for d in self._data]
+        return [d.phase_features for d in self.data]
 
     def atom_features(self) -> List[np.ndarray]:
         """
@@ -350,10 +350,10 @@ class MoleculeDataset(Dataset):
         :return: A list of 2D numpy arrays containing the atom descriptors
                  for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].atom_features is None:
+        if len(self.data) == 0 or self.data[0].atom_features is None:
             return None
 
-        return [d.atom_features for d in self._data]
+        return [d.atom_features for d in self.data]
 
     def atom_descriptors(self) -> List[np.ndarray]:
         """
@@ -362,10 +362,10 @@ class MoleculeDataset(Dataset):
         :return: A list of 2D numpy arrays containing the atom descriptors
                  for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].atom_descriptors is None:
+        if len(self.data) == 0 or self.data[0].atom_descriptors is None:
             return None
 
-        return [d.atom_descriptors for d in self._data]
+        return [d.atom_descriptors for d in self.data]
 
     def bond_features(self) -> List[np.ndarray]:
         """
@@ -374,19 +374,19 @@ class MoleculeDataset(Dataset):
         :return: A list of 2D numpy arrays containing the bond features
                  for each molecule or None if there are no features.
         """
-        if len(self._data) == 0 or self._data[0].bond_features is None:
+        if len(self.data) == 0 or self.data[0].bond_features is None:
             return None
 
-        return [d.bond_features for d in self._data]
+        return [d.bond_features for d in self.data]
 
     def data_weights(self) -> List[float]:
         """
         Returns the loss weighting associated with each datapoint.
         """
-        if not hasattr(self._data[0], 'data_weight'):
-            return [1. for d in self._data]
+        if not hasattr(self.data[0], 'data_weight'):
+            return [1. for d in self.data]
 
-        return [d.data_weight for d in self._data]
+        return [d.data_weight for d in self.data]
 
     def targets(self) -> List[List[Optional[float]]]:
         """
@@ -394,8 +394,12 @@ class MoleculeDataset(Dataset):
 
         :return: A list of lists of floats (or None) containing the targets.
         """
-        return [d.targets for d in self._data]
-    
+        return [d.targets for d in self.data]
+
+    @property
+    def y(self):
+        return np.asarray(self.targets())
+
     def mask(self) -> List[List[bool]]:
         """
         Returns whether the targets associated with each molecule and task are present.
@@ -412,10 +416,10 @@ class MoleculeDataset(Dataset):
         
         :return: A list of lists of booleans indicating whether the targets in those positions are greater-than inequality targets.
         """
-        if not hasattr(self._data[0], 'gt_targets'):
+        if not hasattr(self.data[0], 'gt_targets'):
             return None
 
-        return [d.gt_targets for d in self._data]
+        return [d.gt_targets for d in self.data]
 
     def lt_targets(self) -> List[np.ndarray]:
         """
@@ -423,10 +427,10 @@ class MoleculeDataset(Dataset):
         
         :return: A list of lists of booleans indicating whether the targets in those positions are less-than inequality targets.
         """
-        if not hasattr(self._data[0], 'lt_targets'):
+        if not hasattr(self.data[0], 'lt_targets'):
             return None
 
-        return [d.lt_targets for d in self._data]
+        return [d.lt_targets for d in self.data]
 
     def num_tasks(self) -> int:
         """
@@ -434,7 +438,7 @@ class MoleculeDataset(Dataset):
 
         :return: The number of tasks.
         """
-        return self._data[0].num_tasks() if len(self._data) > 0 else None
+        return self.data[0].num_tasks() if len(self.data) > 0 else None
 
     def features_size(self) -> int:
         """
@@ -442,7 +446,7 @@ class MoleculeDataset(Dataset):
 
         :return: The size of the additional features vector.
         """
-        return len(self._data[0].features) if len(self._data) > 0 and self._data[0].features is not None else None
+        return len(self.data[0].features) if len(self.data) > 0 and self.data[0].features is not None else None
 
     def atom_descriptors_size(self) -> int:
         """
@@ -450,8 +454,8 @@ class MoleculeDataset(Dataset):
 
         :return: The size of the additional atom descriptor vector.
         """
-        return len(self._data[0].atom_descriptors[0]) \
-            if len(self._data) > 0 and self._data[0].atom_descriptors is not None else None
+        return len(self.data[0].atom_descriptors[0]) \
+            if len(self.data) > 0 and self.data[0].atom_descriptors is not None else None
 
     def atom_features_size(self) -> int:
         """
@@ -459,8 +463,8 @@ class MoleculeDataset(Dataset):
 
         :return: The size of the additional atom feature vector.
         """
-        return len(self._data[0].atom_features[0]) \
-            if len(self._data) > 0 and self._data[0].atom_features is not None else None
+        return len(self.data[0].atom_features[0]) \
+            if len(self.data) > 0 and self.data[0].atom_features is not None else None
 
     def bond_features_size(self) -> int:
         """
@@ -468,8 +472,8 @@ class MoleculeDataset(Dataset):
 
         :return: The size of the additional bond feature vector.
         """
-        return len(self._data[0].bond_features[0]) \
-            if len(self._data) > 0 and self._data[0].bond_features is not None else None
+        return len(self.data[0].bond_features[0]) \
+            if len(self.data) > 0 and self.data[0].bond_features is not None else None
 
     def normalize_features(self, scaler: StandardScaler = None, replace_nan_token: int = 0,
                            scale_atom_descriptors: bool = False, scale_bond_features: bool = False) -> StandardScaler:
@@ -493,33 +497,33 @@ class MoleculeDataset(Dataset):
                  is provided as a parameter, this is the same :class:`~chemprop.data.StandardScaler`. Otherwise,
                  this is a new :class:`~chemprop.data.StandardScaler` that has been fit on this dataset.
         """
-        if len(self._data) == 0 or \
-                (self._data[0].features is None and not scale_bond_features and not scale_atom_descriptors):
+        if len(self.data) == 0 or \
+                (self.data[0].features is None and not scale_bond_features and not scale_atom_descriptors):
             return None
 
         if scaler is None:
-            if scale_atom_descriptors and not self._data[0].atom_descriptors is None:
-                features = np.vstack([d.raw_atom_descriptors for d in self._data])
-            elif scale_atom_descriptors and not self._data[0].atom_features is None:
-                features = np.vstack([d.raw_atom_features for d in self._data])
+            if scale_atom_descriptors and not self.data[0].atom_descriptors is None:
+                features = np.vstack([d.raw_atom_descriptors for d in self.data])
+            elif scale_atom_descriptors and not self.data[0].atom_features is None:
+                features = np.vstack([d.raw_atom_features for d in self.data])
             elif scale_bond_features:
-                features = np.vstack([d.raw_bond_features for d in self._data])
+                features = np.vstack([d.raw_bond_features for d in self.data])
             else:
-                features = np.vstack([d.raw_features for d in self._data])
+                features = np.vstack([d.raw_features for d in self.data])
             scaler = StandardScaler(replace_nan_token=replace_nan_token)
             scaler.fit(features)
 
-        if scale_atom_descriptors and not self._data[0].atom_descriptors is None:
-            for d in self._data:
+        if scale_atom_descriptors and not self.data[0].atom_descriptors is None:
+            for d in self.data:
                 d.set_atom_descriptors(scaler.transform(d.raw_atom_descriptors))
-        elif scale_atom_descriptors and not self._data[0].atom_features is None:
-            for d in self._data:
+        elif scale_atom_descriptors and not self.data[0].atom_features is None:
+            for d in self.data:
                 d.set_atom_features(scaler.transform(d.raw_atom_features))
         elif scale_bond_features:
-            for d in self._data:
+            for d in self.data:
                 d.set_bond_features(scaler.transform(d.raw_bond_features))
         else:
-            for d in self._data:
+            for d in self.data:
                 d.set_features(scaler.transform(d.raw_features.reshape(1, -1))[0])
 
         return scaler
@@ -535,7 +539,7 @@ class MoleculeDataset(Dataset):
 
         :return: A :class:`~chemprop.data.StandardScaler` fitted to the targets.
         """
-        targets = [d.raw_targets for d in self._data]
+        targets = [d.raw_targets for d in self.data]
         scaler = StandardScaler().fit(targets)
         scaled_targets = scaler.transform(targets).tolist()
         self.set_targets(scaled_targets)
@@ -549,17 +553,17 @@ class MoleculeDataset(Dataset):
         :param targets: A list of lists of floats (or None) containing targets for each molecule. This must be the
                         same length as the underlying dataset.
         """
-        if not len(self._data) == len(targets):
+        if not len(self.data) == len(targets):
             raise ValueError(
                 "number of molecules and targets must be of same length! "
-                f"num molecules: {len(self._data)}, num targets: {len(targets)}"
+                f"num molecules: {len(self.data)}, num targets: {len(targets)}"
             )
-        for i in range(len(self._data)):
-            self._data[i].set_targets(targets[i])
+        for i in range(len(self.data)):
+            self.data[i].set_targets(targets[i])
 
     def reset_features_and_targets(self) -> None:
         """Resets the features (atom, bond, and molecule) and targets to their raw values."""
-        for d in self._data:
+        for d in self.data:
             d.reset_features_and_targets()
 
     def __len__(self) -> int:
@@ -568,7 +572,7 @@ class MoleculeDataset(Dataset):
 
         :return: The length of the dataset.
         """
-        return len(self._data)
+        return len(self.data)
 
     def __getitem__(self, item) -> Union[MoleculeDatapoint, List[MoleculeDatapoint]]:
         r"""
@@ -578,7 +582,7 @@ class MoleculeDataset(Dataset):
         :return: A :class:`MoleculeDatapoint` if an int is provided or a list of :class:`MoleculeDatapoint`\ s
                  if a slice is provided.
         """
-        return self._data[item]
+        return self.data[item]
 
 
 class MoleculeSampler(Sampler):
