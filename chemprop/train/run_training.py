@@ -387,7 +387,7 @@ def run_training(args: TrainArgs,
 
     # Optionally save test preds
     if args.save_preds and not empty_test_set:
-        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles()})
+        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles(), 'true': test_data.targets()})
 
         for i, task_name in enumerate(args.task_names):
             test_preds_dataframe[task_name] = [pred[i] for pred in avg_test_preds]
