@@ -64,16 +64,19 @@ def save_checkpoint(
     if args is not None:
         args = Namespace(**args.as_dict())
 
-    data_scaler = {"means": scaler.means, "stds": scaler.stds} if scaler is not None else None
+    data_scaler = {"means": scaler.means,
+                   "stds": scaler.stds} if scaler is not None else None
     if features_scaler is not None:
-        features_scaler = {"means": features_scaler.means, "stds": features_scaler.stds}
+        features_scaler = {"means": features_scaler.means,
+                           "stds": features_scaler.stds}
     if atom_descriptor_scaler is not None:
         atom_descriptor_scaler = {
             "means": atom_descriptor_scaler.means,
             "stds": atom_descriptor_scaler.stds,
         }
     if bond_feature_scaler is not None:
-        bond_feature_scaler = {"means": bond_feature_scaler.means, "stds": bond_feature_scaler.stds}
+        bond_feature_scaler = {
+            "means": bond_feature_scaler.means, "stds": bond_feature_scaler.stds}
 
     state = {
         "args": args,
@@ -120,7 +123,8 @@ def load_checkpoint(
     for loaded_param_name in loaded_state_dict.keys():
         # Backward compatibility for parameter names
         if re.match(r"(encoder\.encoder\.)([Wc])", loaded_param_name) and not args.reaction_solvent:
-            param_name = loaded_param_name.replace("encoder.encoder", "encoder.encoder.0")
+            param_name = loaded_param_name.replace(
+                "encoder.encoder", "encoder.encoder.0")
         else:
             param_name = loaded_param_name
 
@@ -169,7 +173,8 @@ def overwrite_state_dict(
     debug = logger.debug if logger is not None else print
 
     if model_param_name not in model_state_dict:
-        debug(f'Pretrained parameter "{model_param_name}" cannot be found in model parameters.')
+        debug(
+            f'Pretrained parameter "{model_param_name}" cannot be found in model parameters.')
 
     elif model_state_dict[model_param_name].shape != loaded_state_dict[loaded_param_name].shape:
         debug(
@@ -202,7 +207,8 @@ def load_frzn_model(
     """
     debug = logger.debug if logger is not None else print
 
-    loaded_mpnn_model = torch.load(path, map_location=lambda storage, loc: storage)
+    loaded_mpnn_model = torch.load(
+        path, map_location=lambda storage, loc: storage)
     loaded_state_dict = loaded_mpnn_model["state_dict"]
     loaded_args = loaded_mpnn_model["args"]
 
@@ -227,7 +233,8 @@ def load_frzn_model(
                 [f"ffn.{i*3+1}.weight", f"ffn.{i*3+1}.bias"]
                 for i in range(current_args.frzn_ffn_layers)
             ]
-            ffn_param_names = [item for sublist in ffn_param_names for item in sublist]
+            ffn_param_names = [
+                item for sublist in ffn_param_names for item in sublist]
 
             # Freeze MPNN and FFN layers
             for param_name in encoder_param_names + ffn_param_names:
@@ -322,7 +329,8 @@ def load_frzn_model(
                 ]
                 for mol_num in range(current_args.number_of_molecules)
             ]
-            encoder_param_names = [item for sublist in encoder_param_names for item in sublist]
+            encoder_param_names = [
+                item for sublist in encoder_param_names for item in sublist]
 
             for param_name in encoder_param_names:
                 model_state_dict = overwrite_state_dict(
@@ -341,12 +349,14 @@ def load_frzn_model(
                 ]
                 for mol_num in range(current_args.number_of_molecules)
             ]
-            encoder_param_names = [item for sublist in encoder_param_names for item in sublist]
+            encoder_param_names = [
+                item for sublist in encoder_param_names for item in sublist]
             ffn_param_names = [
                 [f"ffn.{i+3+1}.weight", f"ffn.{i+3+1}.bias"]
                 for i in range(current_args.frzn_ffn_layers)
             ]
-            ffn_param_names = [item for sublist in ffn_param_names for item in sublist]
+            ffn_param_names = [
+                item for sublist in ffn_param_names for item in sublist]
 
             for param_name in encoder_param_names + ffn_param_names:
                 model_state_dict = overwrite_state_dict(
@@ -368,15 +378,16 @@ def load_frzn_model(
 def load_mpn_model(model: MoleculeModel,
                    path: str, current_args: Namespace = None,
                    logger: logging.Logger = None,) -> MoleculeModel:
-    # debug = logger.debug if logger is not None else print
-    loaded_mpn_model = torch.load(path, map_location=lambda storage, loc: storage)
-    loaded_state_dict = loaded_mpn_model["state_dict"]
+    loaded_state_dict = torch.load(
+        path, map_location=lambda storage, loc: storage)
     model_state_dict = model.encoder.state_dict()
 
     for i in range(current_args.number_of_molecules):
         for loaded_param_name in loaded_state_dict.keys():
-            model_param_name = loaded_param_name.replace("encoder.0.", f"encoder.{i}.")
-            overwrite_state_dict(loaded_param_name, model_param_name, loaded_state_dict, model_state_dict, logger)
+            model_param_name = loaded_param_name.replace(
+                "encoder.0.", f"encoder.{i}.")
+            overwrite_state_dict(
+                loaded_param_name, model_param_name, loaded_state_dict, model_state_dict, logger)
     model.encoder.load_state_dict(model_state_dict)
 
     return model
@@ -395,7 +406,8 @@ def load_scalers(
     state = torch.load(path, map_location=lambda storage, loc: storage)
 
     if state["data_scaler"] is not None:
-        scaler = StandardScaler(state["data_scaler"]["means"], state["data_scaler"]["stds"])
+        scaler = StandardScaler(
+            state["data_scaler"]["means"], state["data_scaler"]["stds"])
     else:
         scaler = None
 
@@ -436,7 +448,8 @@ def load_args(path: str) -> TrainArgs:
     """
     args = TrainArgs()
     args.from_dict(
-        vars(torch.load(path, map_location=lambda storage, loc: storage)["args"]),
+        vars(torch.load(path, map_location=lambda storage,
+             loc: storage)["args"]),
         skip_unsettable=True,
     )
 
@@ -461,7 +474,8 @@ def build_optimizer(model: nn.Module, args: TrainArgs) -> Optimizer:
     :param args: A :class:`~chemprop.args.TrainArgs` object containing optimizer arguments.
     :return: An initialized Optimizer.
     """
-    params = [{"params": model.parameters(), "lr": args.init_lr, "weight_decay": 0}]
+    params = [{"params": model.parameters(), "lr": args.init_lr,
+               "weight_decay": 0}]
 
     return Adam(params)
 
@@ -478,7 +492,7 @@ def build_lr_scheduler(
     :return: An initialized learning rate scheduler.
     """
     # Learning rate scheduler
-    steps_per_epoch=args.train_data_size // args.batch_size
+    steps_per_epoch = args.train_data_size // args.batch_size
     if steps_per_epoch == 0:
         steps_per_epoch = 1
     return NoamLR(
@@ -559,7 +573,8 @@ def timeit(logger_name: str = None) -> Callable[[Callable], Callable]:
             start_time = time()
             result = func(*args, **kwargs)
             delta = timedelta(seconds=round(time() - start_time))
-            info = logging.getLogger(logger_name).info if logger_name is not None else print
+            info = logging.getLogger(
+                logger_name).info if logger_name is not None else print
             info(f"Elapsed time = {delta}")
 
             return result
@@ -602,7 +617,8 @@ def save_smiles_splits(
     save_split_indices = True
 
     if not isinstance(smiles_columns, list):
-        smiles_columns = preprocess_smiles_columns(path=data_path, smiles_columns=smiles_columns)
+        smiles_columns = preprocess_smiles_columns(
+            path=data_path, smiles_columns=smiles_columns)
 
     with open(data_path) as f:
         reader = csv.DictReader(f)
@@ -619,7 +635,8 @@ def save_smiles_splits(
             indices_by_smiles[smiles] = i
 
     if task_names is None:
-        task_names = get_task_names(path=data_path, smiles_columns=smiles_columns)
+        task_names = get_task_names(
+            path=data_path, smiles_columns=smiles_columns)
 
     features_header = []
     if features_path is not None:
@@ -722,7 +739,8 @@ def update_prediction_args(
             "no_atom_descriptors_scaling": True,
         }
         default_train_args = TrainArgs().parse_args(
-            ["--data_path", None, "--dataset_type", str(train_args.dataset_type)]
+            ["--data_path", None, "--dataset_type",
+                str(train_args.dataset_type)]
         )
         for key, value in vars(default_train_args).items():
             if not hasattr(predict_args, key):
@@ -782,7 +800,8 @@ def update_prediction_args(
     # If features were used during training, they must be used when predicting
     if validate_feature_sources:
         if ((train_args.features_path is None) != (predict_args.features_path is None)) or (
-            (train_args.features_generator is None) != (predict_args.features_generator is None)
+            (train_args.features_generator is None) != (
+                predict_args.features_generator is None)
         ):
             raise ValueError(
                 "Features were used during training so they must be specified again during "
@@ -810,7 +829,8 @@ def multitask_mean(
     :axis: The axis along which to take the mean.
     :return: The combined score across the tasks.
     """
-    scale_dependent_metrics = ["rmse", "mae", "mse", "bounded_rmse", "bounded_mae", "bounded_mse"]
+    scale_dependent_metrics = ["rmse", "mae", "mse",
+                               "bounded_rmse", "bounded_mae", "bounded_mse"]
     nonscale_dependent_metrics = [
         "auc", "prc-auc", "r2", "accuracy", "cross_entropy",
         "binary_cross_entropy", "sid", "wasserstein", "f1", "mcc",
