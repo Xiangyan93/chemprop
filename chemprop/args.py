@@ -393,6 +393,14 @@ class TrainArgs(CommonArgs):
     Whether RDKit molecules will be constructed with adding the Hs to them. This option is intended to be used
     with Chemprop's default molecule or multi-molecule encoders, or in :code:`reaction_solvent` mode where it applies to the solvent only.
     """
+    batch_norm: bool = False
+    """Whether to use Batch Normalization in the MPN."""
+    layer_norm: bool = False
+    """Whether to use Layer Normalization in the MPN."""
+    mpn_path: str = None
+    """Path to a pretrained MPN model."""
+    freeze_mpn: bool = False
+    """Whether to freeze the MPN weights."""
 
     # Training arguments
     epochs: int = 30

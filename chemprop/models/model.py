@@ -65,7 +65,7 @@ class MoleculeModel(nn.Module):
         """
         self.encoder = MPN(args)
 
-        if args.checkpoint_frzn is not None:
+        if args.checkpoint_frzn is not None or args.freeze_mpn:
             if args.freeze_first_only:  # Freeze only the first encoder
                 for param in list(self.encoder.encoder.children())[0].parameters():
                     param.requires_grad = False

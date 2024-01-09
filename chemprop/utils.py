@@ -365,6 +365,23 @@ def load_frzn_model(
     return model
 
 
+def load_mpn_model(model: MoleculeModel,
+                   path: str, current_args: Namespace = None,
+                   logger: logging.Logger = None,) -> MoleculeModel:
+    # debug = logger.debug if logger is not None else print
+    loaded_mpn_model = torch.load(path, map_location=lambda storage, loc: storage)
+    loaded_state_dict = loaded_mpn_model["state_dict"]
+    model_state_dict = model.encoder.state_dict()
+
+    for i in range(current_args.number_of_molecules):
+        for loaded_param_name in loaded_state_dict.keys():
+            model_param_name = loaded_param_name.replace("encoder.0.", f"encoder.{i}.")
+            overwrite_state_dict(loaded_param_name, model_param_name, loaded_state_dict, model_state_dict, logger)
+    model.encoder.load_state_dict(model_state_dict)
+
+    return model
+
+
 def load_scalers(
     path: str,
 ) -> Tuple[StandardScaler, StandardScaler, StandardScaler, StandardScaler]:
@@ -461,11 +478,14 @@ def build_lr_scheduler(
     :return: An initialized learning rate scheduler.
     """
     # Learning rate scheduler
+    steps_per_epoch=args.train_data_size // args.batch_size
+    if steps_per_epoch == 0:
+        steps_per_epoch = 1
     return NoamLR(
         optimizer=optimizer,
         warmup_epochs=[args.warmup_epochs],
         total_epochs=total_epochs or [args.epochs] * args.num_lrs,
-        steps_per_epoch=args.train_data_size // args.batch_size + 1,
+        steps_per_epoch=steps_per_epoch,
         init_lr=[args.init_lr],
         max_lr=[args.max_lr],
         final_lr=[args.final_lr],

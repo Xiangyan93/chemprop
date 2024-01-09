@@ -21,7 +21,7 @@ from chemprop.data import get_class_sizes, get_data, MoleculeDataLoader, Molecul
 from chemprop.models import MoleculeModel
 from chemprop.nn_utils import param_count, param_count_all
 from chemprop.utils import build_optimizer, build_lr_scheduler, load_checkpoint, makedirs, \
-    save_checkpoint, save_smiles_splits, load_frzn_model, multitask_mean
+    save_checkpoint, save_smiles_splits, load_frzn_model, multitask_mean, load_mpn_model
 
 
 def run_training(args: TrainArgs,
@@ -64,7 +64,7 @@ def run_training(args: TrainArgs,
                             atom_descriptors_path=args.separate_val_atom_descriptors_path,
                             bond_features_path=args.separate_val_bond_features_path,
                             phase_features_path=args.separate_val_phase_features_path,
-                            smiles_columns = args.smiles_columns,
+                            smiles_columns=args.smiles_columns,
                             loss_function=args.loss_function,
                             logger=logger)
 
@@ -128,16 +128,22 @@ def run_training(args: TrainArgs,
         features_scaler = None
 
     if args.atom_descriptor_scaling and args.atom_descriptors is not None:
-        atom_descriptor_scaler = train_data.normalize_features(replace_nan_token=0, scale_atom_descriptors=True)
-        val_data.normalize_features(atom_descriptor_scaler, scale_atom_descriptors=True)
-        test_data.normalize_features(atom_descriptor_scaler, scale_atom_descriptors=True)
+        atom_descriptor_scaler = train_data.normalize_features(
+            replace_nan_token=0, scale_atom_descriptors=True)
+        val_data.normalize_features(
+            atom_descriptor_scaler, scale_atom_descriptors=True)
+        test_data.normalize_features(
+            atom_descriptor_scaler, scale_atom_descriptors=True)
     else:
         atom_descriptor_scaler = None
 
     if args.bond_feature_scaling and args.bond_features_size > 0:
-        bond_feature_scaler = train_data.normalize_features(replace_nan_token=0, scale_bond_features=True)
-        val_data.normalize_features(bond_feature_scaler, scale_bond_features=True)
-        test_data.normalize_features(bond_feature_scaler, scale_bond_features=True)
+        bond_feature_scaler = train_data.normalize_features(
+            replace_nan_token=0, scale_bond_features=True)
+        val_data.normalize_features(
+            bond_feature_scaler, scale_bond_features=True)
+        test_data.normalize_features(
+            bond_feature_scaler, scale_bond_features=True)
     else:
         bond_feature_scaler = None
 
@@ -158,7 +164,6 @@ def run_training(args: TrainArgs,
         empty_test_set = True
     else:
         empty_test_set = False
-
 
     # Initialize scaler and scale training targets by subtracting mean and dividing standard deviation (regression only)
     if args.dataset_type == 'regression':
@@ -188,7 +193,8 @@ def run_training(args: TrainArgs,
     # Set up test set evaluation
     test_smiles, test_targets = test_data.smiles(), test_data.targets()
     if args.dataset_type == 'multiclass':
-        sum_test_preds = np.zeros((len(test_smiles), args.num_tasks, args.multiclass_num_classes))
+        sum_test_preds = np.zeros(
+            (len(test_smiles), args.num_tasks, args.multiclass_num_classes))
     else:
         sum_test_preds = np.zeros((len(test_smiles), args.num_tasks))
 
@@ -221,7 +227,8 @@ def run_training(args: TrainArgs,
     )
 
     if args.class_balance:
-        debug(f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
+        debug(
+            f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
 
     # Train ensemble of models
     for model_idx in range(args.ensemble_size):
@@ -235,25 +242,34 @@ def run_training(args: TrainArgs,
 
         # Load/build model
         if args.checkpoint_paths is not None:
-            debug(f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
-            model = load_checkpoint(args.checkpoint_paths[model_idx], logger=logger)
+            debug(
+                f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
+            model = load_checkpoint(
+                args.checkpoint_paths[model_idx], logger=logger)
         else:
             debug(f'Building model {model_idx}')
             model = MoleculeModel(args)
-            
+
         # Optionally, overwrite weights:
         if args.checkpoint_frzn is not None:
-            debug(f'Loading and freezing parameters from {args.checkpoint_frzn}.')
-            model = load_frzn_model(model=model,path=args.checkpoint_frzn, current_args=args, logger=logger)     
-        
+            debug(
+                f'Loading and freezing parameters from {args.checkpoint_frzn}.')
+            model = load_frzn_model(
+                model=model, path=args.checkpoint_frzn, current_args=args, logger=logger)
+
+        if args.mpn_path is not None:
+            debug(f'Loading MPN parameters from {args.mpn_path}.')
+            model = load_mpn_model(
+                model=model, path=args.mpn_path, current_args=args, logger=logger)
+
         debug(model)
-        
-        if args.checkpoint_frzn is not None:
+
+        if args.checkpoint_frzn is not None or args.freeze_mpn:
             debug(f'Number of unfrozen parameters = {param_count(model):,}')
             debug(f'Total number of parameters = {param_count_all(model):,}')
         else:
             debug(f'Number of parameters = {param_count_all(model):,}')
-        
+
         if args.cuda:
             debug('Moving model to cuda')
         model = model.to(args.device)
@@ -300,16 +316,20 @@ def run_training(args: TrainArgs,
                 # Average validation score\
                 mean_val_score = multitask_mean(scores, metric=metric)
                 debug(f'Validation {metric} = {mean_val_score:.6f}')
-                writer.add_scalar(f'validation_{metric}', mean_val_score, n_iter)
+                writer.add_scalar(
+                    f'validation_{metric}', mean_val_score, n_iter)
 
                 if args.show_individual_scores:
                     # Individual validation scores
                     for task_name, val_score in zip(args.task_names, scores):
-                        debug(f'Validation {task_name} {metric} = {val_score:.6f}')
-                        writer.add_scalar(f'validation_{task_name}_{metric}', val_score, n_iter)
+                        debug(
+                            f'Validation {task_name} {metric} = {val_score:.6f}')
+                        writer.add_scalar(
+                            f'validation_{task_name}_{metric}', val_score, n_iter)
 
             # Save model checkpoint if improved validation score
-            mean_val_score = multitask_mean(val_scores[args.metric], metric=args.metric)
+            mean_val_score = multitask_mean(
+                val_scores[args.metric], metric=args.metric)
             if args.minimize_score and mean_val_score < best_score or \
                     not args.minimize_score and mean_val_score > best_score:
                 best_score, best_epoch = mean_val_score, epoch
@@ -317,11 +337,14 @@ def run_training(args: TrainArgs,
                                 atom_descriptor_scaler, bond_feature_scaler, args)
 
         # Evaluate on test set using model with best validation score
-        info(f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
-        model = load_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), device=args.device, logger=logger)
+        info(
+            f'Model {model_idx} best validation {args.metric} = {best_score:.6f} on epoch {best_epoch}')
+        model = load_checkpoint(os.path.join(
+            save_dir, MODEL_FILE_NAME), device=args.device, logger=logger)
 
         if empty_test_set:
-            info(f'Model {model_idx} provided with no test set, no metric evaluation will be performed.')
+            info(
+                f'Model {model_idx} provided with no test set, no metric evaluation will be performed.')
         else:
             test_preds = predict(
                 model=model,
@@ -351,8 +374,10 @@ def run_training(args: TrainArgs,
                 if args.show_individual_scores and args.dataset_type != 'spectra':
                     # Individual test scores
                     for task_name, test_score in zip(args.task_names, scores):
-                        info(f'Model {model_idx} test {task_name} {metric} = {test_score:.6f}')
-                        writer.add_scalar(f'test_{task_name}_{metric}', test_score, n_iter)
+                        info(
+                            f'Model {model_idx} test {task_name} {metric} = {test_score:.6f}')
+                        writer.add_scalar(
+                            f'test_{task_name}_{metric}', test_score, n_iter)
         writer.close()
 
     # Evaluate ensemble on test set
@@ -382,7 +407,8 @@ def run_training(args: TrainArgs,
         # Individual ensemble scores
         if args.show_individual_scores:
             for task_name, ensemble_score in zip(args.task_names, scores):
-                info(f'Ensemble test {task_name} {metric} = {ensemble_score:.6f}')
+                info(
+                    f'Ensemble test {task_name} {metric} = {ensemble_score:.6f}')
 
     # Save scores
     with open(os.path.join(args.save_dir, 'test_scores.json'), 'w') as f:
@@ -390,11 +416,14 @@ def run_training(args: TrainArgs,
 
     # Optionally save test preds
     if args.save_preds and not empty_test_set:
-        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles()})
+        test_preds_dataframe = pd.DataFrame(
+            data={'smiles': test_data.smiles()})
 
         for i, task_name in enumerate(args.task_names):
-            test_preds_dataframe[task_name] = [pred[i] for pred in avg_test_preds]
+            test_preds_dataframe[task_name] = [pred[i]
+                                               for pred in avg_test_preds]
 
-        test_preds_dataframe.to_csv(os.path.join(args.save_dir, 'test_preds.csv'), index=False)
+        test_preds_dataframe.to_csv(os.path.join(
+            args.save_dir, 'test_preds.csv'), index=False)
 
     return ensemble_scores

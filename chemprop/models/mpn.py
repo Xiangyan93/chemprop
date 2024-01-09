@@ -37,6 +37,9 @@ class MPNEncoder(nn.Module):
         self.device = args.device
         self.aggregation = args.aggregation
         self.aggregation_norm = args.aggregation_norm
+        
+        self.bn = nn.BatchNorm1d(self.hidden_size) if args.batch_norm else None
+        self.ln = nn.LayerNorm(self.hidden_size) if args.layer_norm else None
 
         # Dropout
         self.dropout_layer = nn.Dropout(p=self.dropout)
@@ -115,6 +118,10 @@ class MPNEncoder(nn.Module):
 
             message = self.W_h(message)
             message = self.act_func(input + message)  # num_bonds x hidden_size
+            if self.bn is not None:
+                message = self.bn(message)
+            if self.ln is not None:
+                message = self.ln(message)
             message = self.dropout_layer(message)  # num_bonds x hidden
 
         a2x = a2a if self.atom_messages else a2b

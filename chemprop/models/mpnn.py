@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import time
 from typing import Dict, Iterator, List, Optional, Union, Literal, Tuple
 from tqdm import trange
 from logging import Logger
@@ -18,16 +19,16 @@ from chemprop.constants import MODEL_FILE_NAME
 from chemprop.train.loss_functions import get_loss_func
 from chemprop.train import train
 from chemprop.train.predict import predict
-from .args import TrainArgs
+from chemprop.args import TrainArgs
 
 
 class MPNN:
     def __init__(self,
-                 save_dir: str,
+                 save_dir: str, data_path: str,
                  dataset_type: Literal['regression', 'classification', 'multiclass', 'spectra'],
                  loss_function: Literal['mse', 'bounded_mse', 'binary_cross_entropy', 'cross_entropy', 'mcc', 'sid',
                                         'wasserstein', 'mve', 'evidential', 'dirichlet'],
-                 num_tasks: int = 1,
+                 smiles_columns: List[str] = None, target_columns: List[str] = None,
                  multiclass_num_classes: int = 3,
                  features_generator=None,
                  no_features_scaling: bool = False,
@@ -54,12 +55,13 @@ class MPNN:
                  seed: int = 0,
                  logger: Logger = None,
                  ):
-        """This is a object of MPNN in chemprop."""
         args = TrainArgs()
         args.save_dir = save_dir
+        args.data_path = data_path
         args.dataset_type = dataset_type
         args.loss_function = loss_function
-        args.num_tasks = num_tasks
+        args.smiles_columns = smiles_columns
+        args.target_columns = target_columns
         args.multiclass_num_classes = multiclass_num_classes
         args.features_generator = features_generator
         args.no_features_scaling = no_features_scaling
@@ -85,11 +87,16 @@ class MPNN:
         args.freeze_first_only = freeze_first_only
         args.seed = seed
         args.process_args()
+        args.task_names = get_task_names(path=args.data_path, smiles_columns=args.smiles_columns,
+                                         target_columns=args.target_columns, ignore_columns=args.ignore_columns)
+        args._parsed = True
         self.args = args
         self.features_scaler = None
         self.logger = logger
 
     def fit(self, train_data):
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         args = self.args
         args.train_data_size = len(train_data)
         logger = self.logger
@@ -106,7 +113,8 @@ class MPNN:
             args.train_class_sizes = train_class_sizes
 
         if args.features_scaling:
-            self.features_scaler = train_data.normalize_features(replace_nan_token=0)
+            self.features_scaler = train_data.normalize_features(
+                replace_nan_token=0)
 
         atom_descriptor_scaler = None
         bond_feature_scaler = None
@@ -144,35 +152,42 @@ class MPNN:
         )
 
         if args.class_balance:
-            debug(f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
+            debug(
+                f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
 
         for model_idx in range(args.ensemble_size):
             # Tensorboard writer
             save_dir = os.path.join(args.save_dir, f'model_{model_idx}')
             makedirs(save_dir)
-            #try:
+            # try:
             #    writer = SummaryWriter(log_dir=save_dir)
-            #except:
+            # except:
             #    writer = SummaryWriter(logdir=save_dir)
             writer = None
             # Load/build model
             if args.checkpoint_paths is not None:
-                debug(f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
-                model = load_checkpoint(args.checkpoint_paths[model_idx], logger=logger)
+                debug(
+                    f'Loading model {model_idx} from {args.checkpoint_paths[model_idx]}')
+                model = load_checkpoint(
+                    args.checkpoint_paths[model_idx], logger=logger)
             else:
                 debug(f'Building model {model_idx}')
                 model = MoleculeModel(args)
 
             # Optionally, overwrite weights:
             if args.checkpoint_frzn is not None:
-                debug(f'Loading and freezing parameters from {args.checkpoint_frzn}.')
-                model = load_frzn_model(model=model, path=args.checkpoint_frzn, current_args=args, logger=logger)
+                debug(
+                    f'Loading and freezing parameters from {args.checkpoint_frzn}.')
+                model = load_frzn_model(
+                    model=model, path=args.checkpoint_frzn, current_args=args, logger=logger)
 
             debug(model)
 
             if args.checkpoint_frzn is not None:
-                debug(f'Number of unfrozen parameters = {param_count(model):,}')
-                debug(f'Total number of parameters = {param_count_all(model):,}')
+                debug(
+                    f'Number of unfrozen parameters = {param_count(model):,}')
+                debug(
+                    f'Total number of parameters = {param_count_all(model):,}')
             else:
                 debug(f'Number of parameters = {param_count_all(model):,}')
 

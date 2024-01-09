@@ -2,7 +2,7 @@ import threading
 from collections import OrderedDict
 from random import Random
 from typing import Dict, Iterator, List, Optional, Union, Tuple
-
+from functools import cached_property
 import numpy as np
 from torch.utils.data import DataLoader, Dataset, Sampler
 from rdkit import Chem
@@ -12,6 +12,7 @@ from chemprop.features import get_features_generator
 from chemprop.features import BatchMolGraph, MolGraph
 from chemprop.features import is_explicit_h, is_reaction, is_adding_hs, is_mol
 from chemprop.rdkit import make_mol
+from .augmentor import BaseAugmentor
 
 # Cache of graph featurizations
 CACHE_GRAPH = True
@@ -103,6 +104,7 @@ class MoleculeDatapoint:
         self.is_reaction_list = [is_reaction(x) for x in self.is_mol_list]
         self.is_explicit_h_list = [is_explicit_h(x) for x in self.is_mol_list]
         self.is_adding_hs_list = [is_adding_hs(x) for x in self.is_mol_list]
+        self.mol_graph_aug = []
 
         if data_weight is not None:
             self.data_weight = data_weight
@@ -166,6 +168,25 @@ class MoleculeDatapoint:
 
         return mol
 
+    @cached_property
+    def mol_graph(self) -> List[MolGraph]:
+        mol_graphs_list = []
+        for s, m in zip(self.smiles, self.mol):
+            if s in SMILES_TO_GRAPH:
+                mol_graph = SMILES_TO_GRAPH[s]
+            else:
+                if len(self.smiles) > 1 and (self.atom_features is not None or self.bond_features is not None):
+                    raise NotImplementedError('Atom descriptors are currently only supported with one molecule '
+                                                'per input (i.e., number_of_molecules = 1).')
+
+                mol_graph = MolGraph(m, self.atom_features, self.bond_features,
+                                        overwrite_default_atom_features=self.overwrite_default_atom_features,
+                                        overwrite_default_bond_features=self.overwrite_default_bond_features)
+                if cache_graph():
+                    SMILES_TO_GRAPH[s] = mol_graph
+            mol_graphs_list.append(mol_graph)
+        return mol_graphs_list
+    
     @property
     def number_of_molecules(self) -> int:
         """
@@ -241,13 +262,15 @@ class MoleculeDatapoint:
 class MoleculeDataset(Dataset):
     r"""A :class:`MoleculeDataset` contains a list of :class:`MoleculeDatapoint`\ s with access to their attributes."""
 
-    def __init__(self, data: List[MoleculeDatapoint]):
+    def __init__(self, data: List[MoleculeDatapoint], augmentors: Dict[BaseAugmentor, int] = None):
         r"""
         :param data: A list of :class:`MoleculeDatapoint`\ s.
         """
         self.data = data
         self._batch_graph = None
+        self._batch_graph_aug = None
         self._random = Random()
+        self.augmentors = augmentors
 
     def smiles(self, flatten: bool = False) -> Union[List[str], List[List[str]]]:
         """
@@ -296,30 +319,25 @@ class MoleculeDataset(Dataset):
                  molecules in each :class:`MoleculeDatapoint`.
         """
         if self._batch_graph is None:
-            self._batch_graph = []
-
-            mol_graphs = []
-            for d in self.data:
-                mol_graphs_list = []
-                for s, m in zip(d.smiles, d.mol):
-                    if s in SMILES_TO_GRAPH:
-                        mol_graph = SMILES_TO_GRAPH[s]
-                    else:
-                        if len(d.smiles) > 1 and (d.atom_features is not None or d.bond_features is not None):
-                            raise NotImplementedError('Atom descriptors are currently only supported with one molecule '
-                                                      'per input (i.e., number_of_molecules = 1).')
-
-                        mol_graph = MolGraph(m, d.atom_features, d.bond_features,
-                                             overwrite_default_atom_features=d.overwrite_default_atom_features,
-                                             overwrite_default_bond_features=d.overwrite_default_bond_features)
-                        if cache_graph():
-                            SMILES_TO_GRAPH[s] = mol_graph
-                    mol_graphs_list.append(mol_graph)
-                mol_graphs.append(mol_graphs_list)
-
-            self._batch_graph = [BatchMolGraph([g[i] for g in mol_graphs]) for i in range(len(mol_graphs[0]))]
-
+            self._batch_graph = [BatchMolGraph([d.mol_graph[i] for d in self.data]) for i in range(len(self.data[0].mol_graph))]
         return self._batch_graph
+
+    def batch_graph_aug(self) -> List[BatchMolGraph]:
+        if self._batch_graph_aug is None:
+            self._batch_graph_aug = []
+            assert self.augmentors is not None
+            for d in self.data:
+                if len(d.mol_graph_aug) == 0 and self.augmentors is not None:
+                    for augmentor, n in self.augmentors.items():
+                        for seed in range(n):
+                            d.mol_graph_aug.append([augmentor(mg, seed=seed) for mg in d.mol_graph])
+                assert len(d.mol_graph_aug) == sum([n for augmentor, n in self.augmentors.items()])
+            for i in range(len(self.data[0].mol_graph)):
+                mol_graphs_aug = []
+                for j in range(len(self.data[0].mol_graph_aug)):
+                    mol_graphs_aug += [d.mol_graph_aug[j][i] for d in self.data]
+                self._batch_graph_aug.append(BatchMolGraph(mol_graphs_aug))
+        return self._batch_graph_aug
 
     def features(self) -> List[np.ndarray]:
         """
@@ -642,7 +660,7 @@ class MoleculeSampler(Sampler):
         return self.length
 
 
-def construct_molecule_batch(data: List[MoleculeDatapoint]) -> MoleculeDataset:
+def construct_molecule_batch(data: List[MoleculeDatapoint], augmentors: Dict[BaseAugmentor, int] = None) -> MoleculeDataset:
     r"""
     Constructs a :class:`MoleculeDataset` from a list of :class:`MoleculeDatapoint`\ s.
 
@@ -652,7 +670,7 @@ def construct_molecule_batch(data: List[MoleculeDatapoint]) -> MoleculeDataset:
     :param data: A list of :class:`MoleculeDatapoint`\ s.
     :return: A :class:`MoleculeDataset` containing all the :class:`MoleculeDatapoint`\ s.
     """
-    data = MoleculeDataset(data)
+    data = MoleculeDataset(data, augmentors=augmentors)
     data.batch_graph()  # Forces computation and caching of the BatchMolGraph for the molecules
 
     return data
@@ -704,7 +722,7 @@ class MoleculeDataLoader(DataLoader):
             batch_size=self._batch_size,
             sampler=self._sampler,
             num_workers=self._num_workers,
-            collate_fn=construct_molecule_batch,
+            collate_fn=lambda data: construct_molecule_batch(data, augmentors=dataset.augmentors),
             multiprocessing_context=self._context,
             timeout=self._timeout
         )

@@ -3,7 +3,7 @@ import csv
 from logging import Logger
 import pickle
 from random import Random
-from typing import List, Set, Tuple, Union
+from typing import List, Set, Tuple, Union, Dict
 import os
 
 from rdkit import Chem
@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from .data import MoleculeDatapoint, MoleculeDataset, make_mols
 from .scaffold import log_scaffold_stats, scaffold_split
+from .augmentor import BaseAugmentor
 from chemprop.args import PredictArgs, TrainArgs
 from chemprop.features import load_features, load_valid_atom_or_bond_features, is_mol
 
@@ -157,7 +158,7 @@ def get_smiles(path: str,
     return smiles
 
 
-def filter_invalid_smiles(data: MoleculeDataset) -> MoleculeDataset:
+def filter_invalid_smiles(data: MoleculeDataset, augmentors: Dict[BaseAugmentor, int] = None) -> MoleculeDataset:
     """
     Filters out invalid SMILES.
 
@@ -167,7 +168,7 @@ def filter_invalid_smiles(data: MoleculeDataset) -> MoleculeDataset:
     return MoleculeDataset([datapoint for datapoint in tqdm(data)
                             if all(s != '' for s in datapoint.smiles) and all(m is not None for m in datapoint.mol)
                             and all(m.GetNumHeavyAtoms() > 0 for m in datapoint.mol if not isinstance(m, tuple))
-                            and all(m[0].GetNumHeavyAtoms() + m[1].GetNumHeavyAtoms() > 0 for m in datapoint.mol if isinstance(m, tuple))])
+                            and all(m[0].GetNumHeavyAtoms() + m[1].GetNumHeavyAtoms() > 0 for m in datapoint.mol if isinstance(m, tuple))], augmentors=augmentors)
 
 
 def get_invalid_smiles_from_file(path: str = None,
@@ -228,6 +229,7 @@ def get_data(path: str,
              target_columns: List[str] = None,
              ignore_columns: List[str] = None,
              skip_invalid_smiles: bool = True,
+             augmentors: Dict[BaseAugmentor, int] = None,
              args: Union[TrainArgs, PredictArgs] = None,
              data_weights_path: str = None,
              features_path: List[str] = None,
@@ -250,6 +252,7 @@ def get_data(path: str,
                            except the :code:`smiles_column` and the :code:`ignore_columns`.
     :param ignore_columns: Name of the columns to ignore when :code:`target_columns` is not provided.
     :param skip_invalid_smiles: Whether to skip and filter out invalid smiles using :func:`filter_invalid_smiles`.
+    :param augmentors: A dictionary of :class:`~chemprop.data.augmentor.BaseAugmentor` s and the number of times.
     :param args: Arguments, either :class:`~chemprop.args.TrainArgs` or :class:`~chemprop.args.PredictArgs`.
     :param data_weights_path: A path to a file containing weights for each molecule in the loss function.
     :param features_path: A list of paths to files containing features. If provided, it is used
@@ -284,6 +287,7 @@ def get_data(path: str,
             else args.bond_features_path
         max_data_size = max_data_size if max_data_size is not None else args.max_data_size
         loss_function = loss_function if loss_function is not None else args.loss_function
+        # augmentors = augmentors if augmentors is not None else args.augmentors
 
     if not isinstance(smiles_columns, list):
         smiles_columns = preprocess_smiles_columns(path=path, smiles_columns=smiles_columns)
@@ -424,12 +428,12 @@ def get_data(path: str,
                 overwrite_default_bond_features=args.overwrite_default_bond_features if args is not None else False
             ) for i, (smiles, targets) in tqdm(enumerate(zip(all_smiles, all_targets)),
                                                total=len(all_smiles))
-        ])
+        ], augmentors=augmentors)
 
     # Filter out invalid SMILES
     if skip_invalid_smiles:
         original_data_len = len(data)
-        data = filter_invalid_smiles(data)
+        data = filter_invalid_smiles(data, augmentors=augmentors)
 
         if len(data) < original_data_len:
             debug(f'Warning: {original_data_len - len(data)} SMILES are invalid.')
