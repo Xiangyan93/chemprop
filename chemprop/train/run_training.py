@@ -422,6 +422,8 @@ def run_training(args: TrainArgs,
         for i, task_name in enumerate(args.task_names):
             test_preds_dataframe[task_name] = [pred[i]
                                                for pred in avg_test_preds]
+            test_preds_dataframe[task_name + '_true'] = [target[i]
+                                                         for target in test_targets]
 
         test_preds_dataframe.to_csv(os.path.join(
             args.save_dir, 'test_preds.csv'), index=False)
