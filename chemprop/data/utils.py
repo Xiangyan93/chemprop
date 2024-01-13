@@ -541,7 +541,7 @@ def split_data(data: MoleculeDataset,
                     split_indices.extend(pickle.load(rf))
             data_split.append([data[i] for i in split_indices])
         train, val, test = tuple(data_split)
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     elif split_type in {'cv', 'cv-no-test'}:
         if num_folds <= 1 or num_folds > len(data):
@@ -563,7 +563,7 @@ def split_data(data: MoleculeDataset,
             else:
                 train.append(d)
 
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     elif split_type == 'index_predetermined':
         split_indices = args.crossval_index_sets[args.seed]
@@ -575,7 +575,7 @@ def split_data(data: MoleculeDataset,
         for split in range(3):
             data_split.append([data[i] for i in split_indices[split]])
         train, val, test = tuple(data_split)
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     elif split_type == 'predetermined':
         if not val_fold_index and sizes[2] != 0:
@@ -615,7 +615,7 @@ def split_data(data: MoleculeDataset,
             train = train_val[:train_size]
             val = train_val[train_size:]
 
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     elif split_type == 'scaffold_balanced':
         return scaffold_split(data, sizes=sizes, balanced=True, key_molecule_index=key_molecule_index, seed=seed, logger=logger)
@@ -641,7 +641,7 @@ def split_data(data: MoleculeDataset,
         val = [data[i] for i in val]
         test = [data[i] for i in test]
 
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     elif split_type == 'random':
         indices = list(range(len(data)))
@@ -654,7 +654,7 @@ def split_data(data: MoleculeDataset,
         val = [data[i] for i in indices[train_size:train_val_size]]
         test = [data[i] for i in indices[train_val_size:]]
 
-        return MoleculeDataset(train), MoleculeDataset(val), MoleculeDataset(test)
+        return MoleculeDataset(train, augmentors=data.augmentors), MoleculeDataset(val, augmentors=data.augmentors), MoleculeDataset(test, augmentors=data.augmentors)
 
     else:
         raise ValueError(f'split_type "{split_type}" not supported.')
