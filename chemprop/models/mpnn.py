@@ -155,6 +155,7 @@ class MPNN:
             debug(
                 f'With class_balance, effective train size = {train_data_loader.iter_size:,}')
 
+        self.models = []
         for model_idx in range(args.ensemble_size):
             # Tensorboard writer
             save_dir = os.path.join(args.save_dir, f'model_{model_idx}')
@@ -221,7 +222,7 @@ class MPNN:
                 )
                 if isinstance(scheduler, ExponentialLR):
                     scheduler.step()
-            self.model = model
+            self.models.append(model)
             self.scaler = scaler
             # save_checkpoint(os.path.join(save_dir, MODEL_FILE_NAME), model, scaler, features_scaler,
             #                 atom_descriptor_scaler, bond_feature_scaler, None)
@@ -235,12 +236,16 @@ class MPNN:
             batch_size=args.batch_size,
             num_workers=args.num_workers
         )
-        preds = predict(
-            model=self.model,
-            data_loader=pred_data_loader,
-            scaler=self.scaler,
-            return_unc_parameters=True
-        )
+        sum_test_preds = 0.
+        for model in self.models:
+            preds = predict(
+                model=model,
+                data_loader=pred_data_loader,
+                scaler=self.scaler,
+                return_unc_parameters=True
+            )
+            sum_test_preds += np.array(preds)
+        preds = sum_test_preds / len(self.models)
         if self.args.dataset_type == 'classification':
             preds = np.asarray(preds)
             preds = np.concatenate([preds, 1-preds], axis=1)
@@ -268,11 +273,16 @@ class MPNN:
             batch_size=args.batch_size,
             num_workers=args.num_workers
         )
-        preds = predict(
-            model=self.model,
-            data_loader=pred_data_loader,
-            scaler=self.scaler
-        )
+        sum_test_preds = 0.
+        for model in self.models:
+            preds = predict(
+                model=model,
+                data_loader=pred_data_loader,
+                scaler=self.scaler,
+                return_unc_parameters=True
+            )
+            sum_test_preds += np.array(preds)
+        preds = sum_test_preds / len(self.models)
         if self.args.dataset_type in ['classification', 'multiclass']:
             return np.asarray(preds).ravel()
         elif self.args.dataset_type == 'regression':
