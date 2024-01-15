@@ -703,6 +703,7 @@ class MoleculeDataLoader(DataLoader):
                  num_workers: int = 8,
                  class_balance: bool = False,
                  shuffle: bool = False,
+                 sampler: Sampler = None,
                  seed: int = 0):
         """
         :param dataset: The :class:`MoleculeDataset` containing the molecules to load.
@@ -727,13 +728,15 @@ class MoleculeDataLoader(DataLoader):
         if not is_main_thread and self._num_workers > 0:
             self._context = 'forkserver'  # In order to prevent a hanging
             self._timeout = 3600  # Just for sure that the DataLoader won't hang
-
-        self._sampler = MoleculeSampler(
-            dataset=self._dataset,
-            class_balance=self._class_balance,
-            shuffle=self._shuffle,
-            seed=self._seed
-        )
+        if sampler is None:
+            self._sampler = MoleculeSampler(
+                dataset=self._dataset,
+                class_balance=self._class_balance,
+                shuffle=self._shuffle,
+                seed=self._seed
+            )
+        else:
+            self._sampler=sampler
 
         super(MoleculeDataLoader, self).__init__(
             dataset=self._dataset,
