@@ -331,24 +331,26 @@ class MoleculeDataset(Dataset):
                 [d.mol_graph[i] for d in self.data]) for i in range(len(self.data[0].mol_graph))]
         return self._batch_graph
 
-    def batch_graph_aug(self, fix_seed: bool = True) -> List[BatchMolGraph]:
-        if self._batch_graph_aug is None:
-            self._batch_graph_aug = []
+    def batch_graph_aug(self, fix_seed: bool = True, use_save=True) -> List[BatchMolGraph]:
+        if self._batch_graph_aug is None or not use_save:
+            _batch_graph_aug = []
             assert self.augmentors is not None
             for d in self.data:
                 if len(d.mol_graph_aug) == 0 and self.augmentors is not None:
                     for augmentor, n in self.augmentors.items():
                         for seed in range(n):
-                            d.mol_graph_aug.append(
-                                [augmentor(mg, seed=seed) if fix_seed else augmentor(mg) for mg in d.mol_graph])
+                            d.mol_graph_aug.append([augmentor(mg, seed=seed) if fix_seed else augmentor(mg) for mg in d.mol_graph])
                 assert len(d.mol_graph_aug) == sum(
                     [n for augmentor, n in self.augmentors.items()])
             for i in range(len(self.data[0].mol_graph)):
                 mol_graphs_aug = []
                 for j in range(len(self.data[0].mol_graph_aug)):
-                    mol_graphs_aug += [d.mol_graph_aug[j][i]
-                                       for d in self.data]
-                self._batch_graph_aug.append(BatchMolGraph(mol_graphs_aug))
+                    mol_graphs_aug += [d.mol_graph_aug[j][i] for d in self.data]
+                _batch_graph_aug.append(BatchMolGraph(mol_graphs_aug))
+            if use_save:
+                self._batch_graph_aug = _batch_graph_aug
+            else:
+                return _batch_graph_aug
         return self._batch_graph_aug
 
     def features(self) -> List[np.ndarray]:
