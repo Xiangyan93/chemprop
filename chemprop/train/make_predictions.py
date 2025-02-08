@@ -112,7 +112,7 @@ def set_features(args: PredictArgs, train_args: TrainArgs):
 
     # set explicit H option and reaction option
     set_explicit_h(train_args.explicit_h)
-    set_adding_hs(args.adding_h)
+    set_adding_hs(train_args.adding_h)
     if train_args.reaction:
         set_reaction(train_args.reaction, train_args.reaction_mode)
     elif train_args.reaction_solvent:
@@ -162,8 +162,8 @@ def predict_and_save(
         models=models,
         scalers=scalers,
         num_models=num_models,
-        dataset_type=args.dataset_type,
-        loss_function=args.loss_function,
+        dataset_type=train_args.dataset_type,
+        loss_function=train_args.loss_function,
         uncertainty_dropout_p=args.uncertainty_dropout_p,
         dropout_sampling_size=args.dropout_sampling_size,
         individual_ensemble_predictions=args.individual_ensemble_predictions,
