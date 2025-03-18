@@ -50,6 +50,10 @@ def train(
     else:
         loss_sum = iter_count = 0
 
+    # Record the loss in an epoch
+    epoch_loss_sum = 0.0
+    epoch_batch_count = 0
+
     for batch in tqdm(data_loader, total=len(data_loader), leave=False):
         # Prepare batch
         batch: MoleculeDataset
@@ -223,6 +227,9 @@ def train(
             loss_sum += loss.item()
             iter_count += 1
 
+            epoch_loss_sum += loss.item()
+            epoch_batch_count += 1
+
             loss.backward()
         if args.grad_clip:
             nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
@@ -254,5 +261,14 @@ def train(
                 writer.add_scalar("gradient_norm", gnorm, n_iter)
                 for i, lr in enumerate(lrs):
                     writer.add_scalar(f"learning_rate_{i}", lr, n_iter)
+
+    # Calculate average loss in an epoch
+    epoch_loss_avg = epoch_loss_sum / epoch_batch_count if epoch_batch_count > 0 else 0.0
+
+    # Record the loss
+    loss_file = "epoch_loss.txt"
+    with open(loss_file, "a") as f:
+        f.write(f"{epoch_loss_avg:.6f}\n")
+    debug(f"Epoch finished. Average Loss this epoch = {epoch_loss_avg:.4f}, saved to {loss_file}")
 
     return n_iter
