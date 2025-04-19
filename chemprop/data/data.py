@@ -88,28 +88,36 @@ class MoleculeDatapoint:
         if features is not None and features_generator is not None:
             raise ValueError('Cannot provide both loaded features and a features generator.')
 
-        self.smiles = smiles
-        self.targets = targets
+        # Convert lists to numpy arrays to avoid memory leaks
+        self.smiles = np.array(smiles, dtype=np.string_)
+        self.targets = np.array(targets, dtype=np.float32) if targets is not None else None
         self.row = row
         self.features = features
-        self.features_generator = features_generator
-        self.phase_features = phase_features
+        self.features_generator = np.array(features_generator, dtype=np.string_) if features_generator is not None else None
+        self.phase_features = np.array(phase_features, dtype=np.float32) if phase_features is not None else None
         self.atom_descriptors = atom_descriptors
         self.atom_features = atom_features
         self.bond_features = bond_features
         self.overwrite_default_atom_features = overwrite_default_atom_features
         self.overwrite_default_bond_features = overwrite_default_bond_features
-        self.is_mol_list = [is_mol(s) for s in smiles]
-        self.is_reaction_list = [is_reaction(x) for x in self.is_mol_list]
-        self.is_explicit_h_list = [is_explicit_h(x) for x in self.is_mol_list]
-        self.is_adding_hs_list = [is_adding_hs(x) for x in self.is_mol_list]
+
+        # Convert these lists to numpy arrays
+        is_mol_list = [is_mol(s) for s in smiles]
+        is_reaction_list = [is_reaction(x) for x in is_mol_list]
+        is_explicit_h_list = [is_explicit_h(x) for x in is_mol_list]
+        is_adding_hs_list = [is_adding_hs(x) for x in is_mol_list]
+        
+        self.is_mol_list = np.array(is_mol_list, dtype=bool)
+        self.is_reaction_list = np.array(is_reaction_list, dtype=bool)
+        self.is_explicit_h_list = np.array(is_explicit_h_list, dtype=bool)
+        self.is_adding_hs_list = np.array(is_adding_hs_list, dtype=bool)
 
         if data_weight is not None:
             self.data_weight = data_weight
         if gt_targets is not None:
-            self.gt_targets = gt_targets
+            self.gt_targets = np.array(gt_targets, dtype=bool)
         if lt_targets is not None:
-            self.lt_targets = lt_targets
+            self.lt_targets = np.array(lt_targets, dtype=bool)
 
         # Generate additional features if given a generator
         if self.features_generator is not None:
@@ -131,7 +139,6 @@ class MoleculeDatapoint:
                         elif m[0] is not None and m[1] is not None and m[0].GetNumHeavyAtoms() == 0:
                             self.features.extend(np.zeros(len(features_generator(Chem.MolFromSmiles('C')))))   
                     
-
             self.features = np.array(self.features)
 
         # Fix nans in features
@@ -229,7 +236,7 @@ class MoleculeDatapoint:
 
         :param targets: A list of floats containing the targets.
         """
-        self.targets = targets
+        self.targets = np.array(targets, dtype=np.float32)
 
     def reset_features_and_targets(self) -> None:
         """Resets the features (atom, bond, and molecule) and targets to their raw values."""
@@ -245,7 +252,8 @@ class MoleculeDataset(Dataset):
         r"""
         :param data: A list of :class:`MoleculeDatapoint`\ s.
         """
-        self._data = data
+        # Store data as numpy array to avoid memory leaks with worker processes
+        self._data = np.array(data, dtype=object)
         self._batch_graph = None
         self._random = Random()
 
@@ -581,6 +589,7 @@ class MoleculeDataset(Dataset):
         return self._data[item]
 
 
+# Rest of the code remains the same
 class MoleculeSampler(Sampler):
     """A :class:`MoleculeSampler` samples data from a :class:`MoleculeDataset` for a :class:`MoleculeDataLoader`."""
 
@@ -775,4 +784,3 @@ def make_mols(smiles: List[str], reaction_list: List[bool], keep_h_list: List[bo
         else:
             mol.append(SMILES_TO_MOL[s] if s in SMILES_TO_MOL else make_mol(s, keep_h, add_h))
     return mol
-
