@@ -29,12 +29,6 @@ def set_cache_graph(cache_graph: bool) -> None:
     CACHE_GRAPH = cache_graph
 
 
-def empty_cache():
-    r"""Empties the cache of :class:`~chemprop.features.MolGraph` and RDKit molecules."""
-    SMILES_TO_GRAPH.clear()
-    SMILES_TO_MOL.clear()
-
-
 # Cache of RDKit molecules
 CACHE_MOL = True
 SMILES_TO_MOL: Dict[str, Union[Chem.Mol, Tuple[Chem.Mol, Chem.Mol]]] = {}
@@ -49,6 +43,28 @@ def set_cache_mol(cache_mol: bool) -> None:
     r"""Sets whether RDKit molecules will be cached."""
     global CACHE_MOL
     CACHE_MOL = cache_mol
+
+
+CACHE_FEATURES = True
+SMILES_TO_FEATURES: Dict[str, np.ndarray] = {}
+
+
+def cache_features() -> bool:
+    r"""Returns whether features will be cached."""
+    return CACHE_FEATURES
+
+
+def set_cache_features(cache_features: bool) -> None:
+    r"""Sets whether features will be cached."""
+    global CACHE_FEATURES
+    CACHE_FEATURES = cache_features
+
+
+def empty_cache():
+    r"""Empties the cache of :class:`~chemprop.features.MolGraph` and RDKit molecules."""
+    SMILES_TO_GRAPH.clear()
+    SMILES_TO_MOL.clear()
+    SMILES_TO_FEATURES.clear()
 
 
 class MoleculeDatapoint:
@@ -89,11 +105,11 @@ class MoleculeDatapoint:
             raise ValueError('Cannot provide both loaded features and a features generator.')
 
         # Convert lists to numpy arrays to avoid memory leaks
-        self.smiles = np.array(smiles, dtype=np.string_)
+        self.smiles = np.array(smiles)
         self.targets = np.array(targets, dtype=np.float32) if targets is not None else None
         self.row = row
         self.features = features
-        self.features_generator = np.array(features_generator, dtype=np.string_) if features_generator is not None else None
+        self.features_generator = np.array(features_generator) if features_generator is not None else None
         self.phase_features = np.array(phase_features, dtype=np.float32) if phase_features is not None else None
         self.atom_descriptors = atom_descriptors
         self.atom_features = atom_features
@@ -128,11 +144,27 @@ class MoleculeDatapoint:
                 for m, reaction in zip(self.mol, self.is_reaction_list):
                     if not reaction:
                         if m is not None and m.GetNumHeavyAtoms() > 0:
-                            self.features.extend(features_generator(m))
+                            key = f'{fg}-{Chem.MolToSmiles(m)}'
+                            if cache_features() and key in SMILES_TO_FEATURES:
+                                self.features.extend(SMILES_TO_FEATURES[key])
+                            else:
+                                features = features_generator(m)
+                                if cache_features():
+                                    SMILES_TO_FEATURES[key] = features
+                                self.features.extend(features)
+                            # self.features.extend(features_generator(m))
                         # for H2
                         elif m is not None and m.GetNumHeavyAtoms() == 0:
                             # not all features are equally long, so use methane as dummy molecule to determine length
-                            self.features.extend(np.zeros(len(features_generator(Chem.MolFromSmiles('C')))))                           
+                            key = f'{fg}-C'
+                            if cache_features() and key in SMILES_TO_FEATURES:
+                                self.features.extend(SMILES_TO_FEATURES[key])
+                            else:
+                                features = features_generator(Chem.MolFromSmiles('C'))
+                                if cache_features():
+                                    SMILES_TO_FEATURES[key] = features
+                                self.features.extend(features)
+                            # self.features.extend(np.zeros(len(features_generator(Chem.MolFromSmiles('C')))))                           
                     else:
                         if m[0] is not None and m[1] is not None and m[0].GetNumHeavyAtoms() > 0:
                             self.features.extend(features_generator(m[0]))
@@ -265,9 +297,9 @@ class MoleculeDataset(Dataset):
         :return: A list of SMILES or a list of lists of SMILES, depending on :code:`flatten`.
         """
         if flatten:
-            return [smiles for d in self._data for smiles in d.smiles]
+            return [smiles.tolist() for d in self._data for smiles in d.smiles]
 
-        return [d.smiles for d in self._data]
+        return [d.smiles.tolist() for d in self._data]
 
     def mols(self, flatten: bool = False) -> Union[List[Chem.Mol], List[List[Chem.Mol]], List[Tuple[Chem.Mol, Chem.Mol]], List[List[Tuple[Chem.Mol, Chem.Mol]]]]:
         """
@@ -402,7 +434,7 @@ class MoleculeDataset(Dataset):
 
         :return: A list of lists of floats (or None) containing the targets.
         """
-        return [d.targets for d in self._data]
+        return [d.targets.tolist() for d in self._data]
     
     def mask(self) -> List[List[bool]]:
         """

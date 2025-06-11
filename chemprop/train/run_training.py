@@ -387,11 +387,14 @@ def run_training(args: TrainArgs,
 
     # Optionally save test preds
     if args.save_preds and not empty_test_set:
-        test_preds_dataframe = pd.DataFrame(data={'smiles': test_data.smiles(), 'true': test_data.targets()})
-
+        test_smiles = np.array(test_smiles)
+        test_targets = np.array(test_targets)
+        test_preds_dataframe = pd.DataFrame({})
+        for i, smiles_column in enumerate(args.smiles_columns):
+            test_preds_dataframe[smiles_column] = test_smiles[:, i]
         for i, task_name in enumerate(args.task_names):
+            test_preds_dataframe['%s_true' % task_name] = test_targets[:, i]
             test_preds_dataframe[task_name] = [pred[i] for pred in avg_test_preds]
-
         test_preds_dataframe.to_csv(os.path.join(args.save_dir, 'test_preds.csv'), index=False)
 
     return ensemble_scores
